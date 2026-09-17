@@ -27,6 +27,23 @@ npm run build
 npx serve out
 ```
 
+## Benchmark contract
+
+A **playground comparison** is an interactive side-by-side model experience. It can use mock or live providers, manual scoring and ad-hoc prompts, and is primarily intended for exploration.
+
+A **benchmark run** is a reproducible evaluation record built around a versioned `BenchmarkCase`, explicit `BenchmarkModel` metadata, execution status and timestamps, per-model responses, scores and an explicit winner or tie. The contract types live in `lib/benchmark-contracts.ts` and are versioned with `BENCHMARK_CONTRACT_VERSION`.
+
+The contract separates:
+
+- **Case**: the versioned prompt and task category being evaluated.
+- **Model**: provider, model identity and mock/provider execution mode.
+- **Run**: one execution of one case against a defined model set, including lifecycle status and timing metadata.
+- **Score**: manual evaluation dimensions. A missing score is represented by `null` rather than an implicit zero.
+- **Result**: the response, score, timing and error state for each model in a run.
+- **Winner**: one model identifier, an explicit `tie`, or `null` when a run has not produced a scored outcome.
+
+The contract does not claim that a live model comparison is scientifically reproducible across time. Provider behavior, model versions, network conditions, rate limits and external service changes can affect live results. Mock mode is useful for deterministic UI experimentation, while provider-backed runs should be treated as observations from the selected model and configuration at execution time.
+
 ## Benchmarks
 
 The application separates runnable prompts from benchmark metadata. Runnable prompts are designed for repeatable side-by-side comparisons. The benchmark catalog currently tracks the latest public releases used as reference points:
