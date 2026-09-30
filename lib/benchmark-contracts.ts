@@ -4,21 +4,24 @@ export type BenchmarkExecutionMode = "mock" | "provider"
 
 export type BenchmarkWinner = string | "tie" | null
 
+export type BenchmarkCategory = "Coding" | "Reasoning" | "Summarization" | "Instruction Following" | "Factual QA"
+
 export interface BenchmarkCase {
   id: string
   title: string
   category: BenchmarkCategory
   prompt: string
   version: string
+  datasetVersion: string
 }
-
-export type BenchmarkCategory = "Coding" | "Reasoning" | "Summarization" | "Instruction Following" | "Factual QA"
 
 export interface BenchmarkModel {
   id: string
   label: string
   provider: string
+  modelVersion: string | null
   executionMode: BenchmarkExecutionMode
+  parameters: Record<string, string | number | boolean | null>
 }
 
 export interface BenchmarkScore {
@@ -38,6 +41,7 @@ export interface BenchmarkModelResult {
 
 export interface BenchmarkRun {
   id: string
+  contractVersion: string
   benchmarkCase: BenchmarkCase
   models: BenchmarkModel[]
   status: BenchmarkRunStatus
@@ -54,4 +58,4 @@ export interface BenchmarkComparisonResult {
   winner: boolean
 }
 
-export const BENCHMARK_CONTRACT_VERSION = "1.0"
+export const BENCHMARK_CONTRACT_VERSION = "1.1"
