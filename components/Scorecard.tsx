@@ -28,9 +28,7 @@ export function Scorecard({
   disabled,
   onScore,
 }: ScorecardProps) {
-  const average = score
-    ? Math.round((score.accuracy + score.tone + score.speed) / 3)
-    : 5
+  const average = Math.round(((score?.accuracy ?? 5) + (score?.tone ?? 5) + (score?.speed ?? 5)) / 3)
 
   const getScoreColor = (val: number) => {
     if (val < 4) return "text-red-400"

@@ -2,12 +2,13 @@
 
 import { useReducer, useRef, useCallback, useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
 import { PromptInput } from "./PromptInput"
 import { ModelPane } from "./ModelPane"
 import { Scorecard } from "./Scorecard"
 import { WinnerBar } from "./WinnerBar"
 import { streamResponse, Personality } from "@/lib/mock-engine"
-import { AVAILABLE_MODELS, DEFAULT_PAIR, getModelEngine, getHFModelId, getGitHubModelId } from "@/lib/models"
+import { AVAILABLE_MODELS, DEFAULT_PAIR, getModelEngine, getHFModelId } from "@/lib/models"
 import {
   CompareState,
   CompareAction,
@@ -114,62 +115,14 @@ async function* streamHuggingFaceResponse(
   token: string,
   signal: AbortSignal
 ): AsyncGenerator<string> {
-  const hfModelId = getHFModelId(modelId)
-  
-  const response = await fetch(
-    `https://api-inference.huggingface.co/models/${hfModelId}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        inputs: prompt,
-        parameters: {
-          max_new_tokens: 1024,
-          return_full_text: false,
-        },
-      }),
-      signal,
-    }
-  )
-
-  if (!response.ok) {
-    const error = await response.text()
-    throw new Error(`HF API error: ${response.status} ${error}`)
-  }
-
-  const result = await response.json()
-  const fullText = Array.isArray(result) ? result[0]?.generated_text : result.generated_text
-
-  if (!fullText) {
-    throw new Error("No response generated")
-  }
-
-  for (const char of fullText) {
-    if (signal.aborted) return
-    yield char
-    await new Promise((r) => setTimeout(r, 15 + Math.random() * 10))
-  }
-}
-
-async function* streamGitHubModelResponse(
-  prompt: string,
-  modelId: string,
-  token: string,
-  signal: AbortSignal
-): AsyncGenerator<string> {
-  const ghModelId = getGitHubModelId(modelId)
-  
-  const response = await fetch("https://models.inference.ai.azure.com/chat/completions", {
+  const response = await fetch("https://router.huggingface.co/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
+      Authorization: "Bearer " + token,
     },
     body: JSON.stringify({
-      model: ghModelId,
+      model: getHFModelId(modelId) + ":fastest",
       messages: [{ role: "user", content: prompt }],
       stream: true,
       max_tokens: 1024,
@@ -179,52 +132,68 @@ async function* streamGitHubModelResponse(
 
   if (!response.ok) {
     const error = await response.text()
-    throw new Error(`GitHub Models error: ${response.status} ${error}`)
+    throw new Error("Hugging Face Inference error: " + response.status + " " + error)
   }
 
   const reader = response.body?.getReader()
-  if (!reader) throw new Error("No response body")
+  if (!reader) throw new Error("Hugging Face returned no response stream")
 
   const decoder = new TextDecoder()
   let buffer = ""
+  let receivedContent = false
+
+  const parseEvent = (line: string): { done: boolean; content?: string } => {
+    if (!line.startsWith("data:")) return { done: false }
+    const data = line.slice(5).trim()
+    if (!data) return { done: false }
+    if (data === "[DONE]") return { done: true }
+    try {
+      const parsed = JSON.parse(data)
+      const content = parsed.choices?.[0]?.delta?.content
+      return { done: false, content: typeof content === "string" ? content : undefined }
+    } catch {
+      return { done: false }
+    }
+  }
 
   try {
     while (true) {
-      if (signal.aborted) {
-        reader.cancel()
-        return
-      }
-
-      const { done, value } = await reader.read()
-      if (done) break
-
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split("\n")
+      if (signal.aborted) return
+      const result = await reader.read()
+      if (result.done) break
+      buffer += decoder.decode(result.value, { stream: true })
+      const lines = buffer.split(/\r?\n/)
       buffer = lines.pop() || ""
-
       for (const line of lines) {
-        if (line.trim().startsWith("data: ")) {
-          const data = line.slice(6).trim()
-          if (data === "[DONE]") return
-
-          try {
-            const parsed = JSON.parse(data)
-            const content = parsed.choices?.[0]?.delta?.content
-            if (content) yield content
-          } catch {
-            // Ignore parse errors for partial chunks
-          }
+        const event = parseEvent(line)
+        if (event.done) return
+        if (event.content) {
+          receivedContent = true
+          yield event.content
         }
       }
     }
+
+    buffer += decoder.decode()
+    for (const line of buffer.split(/\r?\n/)) {
+      const event = parseEvent(line)
+      if (event.done) break
+      if (event.content) {
+        receivedContent = true
+        yield event.content
+      }
+    }
+
+    if (!receivedContent && !signal.aborted) {
+      throw new Error("Hugging Face returned no generated text for this model.")
+    }
   } finally {
+    await reader.cancel().catch(() => {})
     reader.releaseLock()
   }
 }
 
-
 async function* streamProviderResponse(
-  engine: "hf" | "github",
   prompt: string,
   modelId: string,
   token: string,
@@ -235,15 +204,16 @@ async function* streamProviderResponse(
   if (parentSignal.aborted) controller.abort()
   else parentSignal.addEventListener("abort", abortFromParent, { once: true })
   const timeout = window.setTimeout(() => controller.abort(), 120000)
+
   try {
-    const stream = engine === "hf"
-      ? streamHuggingFaceResponse(prompt, modelId, token, controller.signal)
-      : streamGitHubModelResponse(prompt, modelId, token, controller.signal)
+    const stream = streamHuggingFaceResponse(prompt, modelId, token, controller.signal)
     for await (const chunk of stream) {
       if (parentSignal.aborted) return
       yield chunk
     }
-    if (controller.signal.aborted && !parentSignal.aborted) throw new Error("Provider request timed out after 120 seconds.")
+    if (controller.signal.aborted && !parentSignal.aborted) {
+      throw new Error("Provider request timed out after 120 seconds.")
+    }
   } catch (error) {
     if (parentSignal.aborted) return
     if (controller.signal.aborted) throw new Error("Provider request timed out after 120 seconds.")
@@ -353,9 +323,10 @@ function getExportData(state: CompareState, models: ModelConfig[]) {
 
 function toMarkdown(data: ReturnType<typeof getExportData>) {
   const sections = data.models.map((model) => {
-    const score = model.score
-      ? `Accuracy: ${model.score.accuracy}, Tone: ${model.score.tone}, Speed: ${model.score.speed}`
-      : "Not scored"
+    const completeScore = model.score && ["accuracy", "tone", "speed"].every((field) => Number.isFinite(model.score?.[field as keyof ScoreEntry]))
+    const score = completeScore
+      ? `Accuracy: ${model.score?.accuracy}, Tone: ${model.score?.tone}, Speed: ${model.score?.speed}`
+      : model.score ? "Partially scored" : "Not scored"
     return `## ${model.model}\n\n**Scores:** ${score}\n\n**Response:**\n\n${model.response || "No response"}`
   })
 
@@ -366,10 +337,11 @@ export function CompareView() {
   const [state, dispatch] = useReducer(compareReducer, initialState)
   const abortControllersRef = useRef<Record<string, AbortController>>({})
   const [hfToken, setHfToken] = useState("")
-  const [githubToken, setGithubToken] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [history, setHistory] = useState<StoredBenchmarkRun[]>([])
   const activeRunIdRef = useRef<string | null>(null)
+  const runInProgressRef = useRef(false)
+  const cancelRequestedRef = useRef(false)
 
   useEffect(() => {
     setHistory(loadRunHistory())
@@ -378,93 +350,105 @@ export function CompareView() {
   const isStreaming = Object.values(state.streaming).some(Boolean)
 
   const needsHfToken = state.selectedModels.some(id => getModelEngine(id) === "hf")
-  const needsGithubToken = state.selectedModels.some(id => getModelEngine(id) === "github")
+  const hasRetiredModel = state.selectedModels.some(id => getModelEngine(id) === "github")
 
   const handleCompare = useCallback(async () => {
-    if (!state.prompt.trim() || isStreaming) return
-    
+    if (!state.prompt.trim() || isStreaming || runInProgressRef.current) return
+
     setError(null)
 
-    if (needsHfToken && !hfToken) {
-      setError("Hugging Face token required. Get one free at huggingface.co/settings/tokens")
+    if (state.selectedModels[0] === state.selectedModels[1]) {
+      setError("Choose two different models to compare.")
       return
     }
-    if (needsGithubToken && !githubToken) {
-      setError("GitHub token required. Get one at github.com/settings/tokens")
+    if (hasRetiredModel) {
+      setError("GitHub Models was retired on July 30, 2026. Choose a different provider; saved results remain available in local history.")
+      return
+    }
+    if (needsHfToken && !hfToken) {
+      setError("Hugging Face token required. Get one at huggingface.co/settings/tokens with Inference Providers permission.")
       return
     }
 
-    Object.values(abortControllersRef.current).forEach((c) => c.abort())
+    runInProgressRef.current = true
+    cancelRequestedRef.current = false
     const startedAt = Date.now()
     const runResponses: Record<string, string> = {}
     const runFailures: Record<string, string> = {}
     dispatch({ type: "RESET_RESPONSES" })
 
     const models = state.selectedModels.map((id) =>
-      AVAILABLE_MODELS.find((m) => m.id === id)
+      AVAILABLE_MODELS.find((model) => model.id === id)
     ).filter(Boolean) as ModelConfig[]
 
-    await Promise.all(
-      models.map(async (model) => {
-        const controller = new AbortController()
-        abortControllersRef.current[model.id] = controller
+    try {
+      await Promise.all(
+        models.map(async (model) => {
+          const controller = new AbortController()
+          abortControllersRef.current[model.id] = controller
+          dispatch({ type: "START_STREAM", payload: { modelId: model.id } })
 
-        dispatch({ type: "START_STREAM", payload: { modelId: model.id } })
+          try {
+            const engine = getModelEngine(model.id)
+            let stream: AsyncGenerator<string>
 
-        try {
-          const engine = getModelEngine(model.id)
-          let stream: AsyncGenerator<string>
+            if (engine === "github") {
+              throw new Error("GitHub Models was retired on July 30, 2026. Choose a supported model.")
+            } else if (engine === "hf") {
+              stream = streamProviderResponse(state.prompt, model.id, hfToken, controller.signal)
+            } else {
+              stream = streamResponse(state.prompt, model.personality as Personality, controller.signal)
+            }
 
-          if (engine === "hf" || engine === "github") {
-            const token = engine === "hf" ? hfToken : githubToken
-            stream = streamProviderResponse(engine, state.prompt, model.id, token, controller.signal)
-          } else {
-            stream = streamResponse(state.prompt, model.personality as Personality, controller.signal)
+            for await (const chunk of stream) {
+              runResponses[model.id] = (runResponses[model.id] || "") + chunk
+              dispatch({
+                type: "APPEND_CHUNK",
+                payload: { modelId: model.id, chunk },
+              })
+            }
+          } catch (err) {
+            if (!cancelRequestedRef.current) {
+              runFailures[model.id] = err instanceof Error ? err.message : "The model request failed unexpectedly."
+              setError(runFailures[model.id])
+            }
+          } finally {
+            dispatch({ type: "END_STREAM", payload: { modelId: model.id } })
+            if (abortControllersRef.current[model.id] === controller) {
+              delete abortControllersRef.current[model.id]
+            }
           }
+        })
+      )
 
-          for await (const chunk of stream) {
-            runResponses[model.id] = (runResponses[model.id] ?? "") + chunk
-            dispatch({
-              type: "APPEND_CHUNK",
-              payload: { modelId: model.id, chunk },
-            })
-          }
-        } catch (err) {
-          const message = err instanceof Error ? err.message : "The model request failed unexpectedly."
-          runFailures[model.id] = message
-          setError(message)
-        }
-
-        dispatch({ type: "END_STREAM", payload: { modelId: model.id } })
-      })
-    )
-
-    const runId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `run-${startedAt}`
-    const selectedModels = [...state.selectedModels] as [string, string]
-    const savedRun: StoredBenchmarkRun = {
-      id: runId,
-      createdAt: new Date(startedAt).toISOString(),
-      prompt: state.prompt,
-      selectedModels,
-      responses: runResponses,
-      scores: {},
-      metrics: Object.fromEntries(models.map((model) => [model.id, calculateHeuristicMetrics(state.prompt, runResponses[model.id] ?? "")])),
-      status: models.every((model) => Boolean(runResponses[model.id]) && !runFailures[model.id])
-        ? "completed"
-        : models.some((model) => Boolean(runResponses[model.id])) ? "partial" : "failed",
-      durationMs: Date.now() - startedAt,
-      winner: null,
+      const runId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : "run-" + startedAt
+      const selectedModels = [...state.selectedModels] as [string, string]
+      const savedRun: StoredBenchmarkRun = {
+        id: runId,
+        createdAt: new Date(startedAt).toISOString(),
+        prompt: state.prompt,
+        selectedModels,
+        responses: runResponses,
+        scores: {},
+        metrics: Object.fromEntries(models.map((model) => [model.id, calculateHeuristicMetrics(state.prompt, runResponses[model.id] || "")])),
+        status: cancelRequestedRef.current ? "cancelled" : models.every((model) => Boolean(runResponses[model.id]) && !runFailures[model.id])
+          ? "completed"
+          : models.some((model) => Boolean(runResponses[model.id])) ? "partial" : "failed",
+        durationMs: Date.now() - startedAt,
+        winner: null,
+      }
+      activeRunIdRef.current = runId
+      setHistory(saveRunHistory(savedRun))
+    } finally {
+      runInProgressRef.current = false
     }
-    activeRunIdRef.current = runId
-    setHistory(saveRunHistory(savedRun))
-  }, [state.prompt, state.selectedModels, isStreaming, hfToken, githubToken, needsHfToken, needsGithubToken])
+  }, [state.prompt, state.selectedModels, isStreaming, hfToken, needsHfToken, hasRetiredModel])
 
   const handleStop = useCallback(() => {
-    Object.values(abortControllersRef.current).forEach((c) => c.abort())
-    state.selectedModels.forEach((id) => {
-      dispatch({ type: "END_STREAM", payload: { modelId: id } })
-    })
-  }, [state.selectedModels])
+    if (!runInProgressRef.current) return
+    cancelRequestedRef.current = true
+    Object.values(abortControllersRef.current).forEach((controller) => controller.abort())
+  }, [])
 
   const handleScore = useCallback(
     (modelId: string, field: keyof ScoreEntry, value: number) => {
@@ -504,35 +488,27 @@ export function CompareView() {
 
   return (
     <div className="space-y-6">
-      {(needsHfToken || needsGithubToken) && (
+      {hasRetiredModel && (
+        <p className="rounded-md border border-amber-900 bg-amber-950/30 p-3 text-sm text-amber-300">
+          GitHub Models was retired on July 30, 2026. Saved results can still be restored, but this provider cannot run new comparisons.
+        </p>
+      )}
+
+      {needsHfToken && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
           <p className="text-sm text-zinc-400">
             Selected models require API tokens. Tokens stay in memory for this tab and are not saved with run history. The static GitHub Pages build sends provider requests from your browser; use only your own limited-scope tokens.
           </p>
-          {needsHfToken && (
-            <div>
-              <label className="text-xs text-zinc-500 block mb-1">Hugging Face Token (free tier: 2,000 requests/day)</label>
-              <Textarea
-                value={hfToken}
-                onChange={(e) => setHfToken(e.target.value)}
-                placeholder="hf_..."
-                rows={1}
-                className="resize-none font-mono text-xs"
-              />
-            </div>
-          )}
-          {needsGithubToken && (
-            <div>
-              <label className="text-xs text-zinc-500 block mb-1">GitHub Token (free Models API)</label>
-              <Textarea
-                value={githubToken}
-                onChange={(e) => setGithubToken(e.target.value)}
-                placeholder="ghp_..."
-                rows={1}
-                className="resize-none font-mono text-xs"
-              />
-            </div>
-          )}
+          <div>
+            <label className="text-xs text-zinc-500 block mb-1">Hugging Face Inference token</label>
+            <Textarea
+              value={hfToken}
+              onChange={(e) => setHfToken(e.target.value)}
+              placeholder="hf_..."
+              rows={1}
+              className="resize-none font-mono text-xs"
+            />
+          </div>
         </div>
       )}
 
@@ -578,7 +554,7 @@ export function CompareView() {
             modelLabel={model.label}
             modelColor={model.color}
             score={state.scores[model.id]}
-            disabled={!state.responses[model.id]}
+            disabled={!state.responses[model.id] || isStreaming}
             onScore={handleScore}
           />
         ))}
@@ -618,7 +594,7 @@ export function CompareView() {
         </div>
       </section>
 
-      <WinnerBar models={models as [ModelConfig, ModelConfig]} scores={state.scores} />
+      <WinnerBar models={models} scores={state.scores} />
 
       <section className="space-y-3 rounded-lg border border-zinc-800 p-4">
         <div>
@@ -633,7 +609,7 @@ export function CompareView() {
                   <p className="truncate text-sm text-zinc-200">{run.prompt}</p>
                   <p className="mt-1 text-xs text-zinc-500">{new Date(run.createdAt).toLocaleString()} · {run.status} · {(run.durationMs / 1000).toFixed(1)}s</p>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => {
+                <Button size="sm" variant="outline" disabled={isStreaming} onClick={() => {
                   activeRunIdRef.current = run.id
                   dispatch({ type: "SET_PROMPT", payload: run.prompt })
                   dispatch({ type: "SET_MODEL", payload: { slot: 0, modelId: run.selectedModels[0] } })

@@ -10,6 +10,7 @@ export type CompareAction =
   | { type: "END_STREAM"; payload: { modelId: string } }
   | { type: "SET_SCORE"; payload: { modelId: string; field: keyof ScoreEntry; value: number } }
   | { type: "RESET_RESPONSES" }
+  | { type: "RESTORE_RUN"; payload: { prompt: string; selectedModels: [string, string]; responses: Record<string, string>; scores: Record<string, ScoreEntry> } }
 
 export type CompareState = {
   prompt: string

@@ -8,7 +8,8 @@ AI Benchmark is a Next.js application for comparing LLM responses side by side. 
 - Load runnable benchmark prompts for coding, reasoning, summarization, instruction following and factual QA.
 - View the latest LiveBench leaderboard directly from its public release data.
 - Use mock models without API keys.
-- Use supported real-model providers when you supply your own token.
+- Use Hugging Face Inference Providers for supported real-model calls when you supply your own token.
+- Keep in mind that GitHub Models was retired on July 30, 2026; its former model choices are marked as retired and cannot run new comparisons.
 - Score responses manually and inspect the winner for the current comparison.
 
 ## Run locally
@@ -51,7 +52,7 @@ The application separates runnable prompts from benchmark metadata. Runnable pro
 - LiveBench 2026-06-25: 23 objective tasks across Reasoning, Coding, Agentic Coding, Mathematics, Data Analysis, Language and Instruction Following.
 - Artificial Analysis Intelligence Index v4.1.1: GDPval-AA v2, τ³-Banking, Terminal-Bench v2.1, SciCode, Humanity's Last Exam, GPQA Diamond, CritPt, AA-Omniscience and AA-LCR.
 
-LiveBench questions and scores are maintained by LiveBench rather than copied into this repository. The application fetches the public leaderboard CSV at runtime and refreshes it every five minutes, with a manual refresh control. This keeps displayed benchmark results current without requiring a new application build.
+LiveBench questions and scores are maintained by LiveBench rather than copied into this repository. The application fetches the public LiveBench CSV at runtime and refreshes it every five minutes, with a manual refresh control. It displays the release's task-level scores dynamically; it does not invent an overall composite score when the CSV has no such column. This keeps displayed benchmark results current without requiring a new application build.
 
 LiveBench source: https://livebench.ai/
 
@@ -67,7 +68,9 @@ Models marked as mock use the local simulation engine and do not make network ca
 
 ### Real provider mode
 
-The application can call supported real models through Hugging Face and GitHub Models when the user supplies a token during the session. Tokens are not committed to the repository.
+The application calls Hugging Face Inference Providers when the user supplies a token during the session. GitHub Models was retired on July 30, 2026, so its former choices remain labelled as retired for existing saved runs but cannot execute new comparisons. Tokens are not committed to the repository.
+
+Hugging Face requests use its OpenAI-compatible chat completions endpoint. Availability varies by model and inference provider, so check the selected model's current provider support if a request fails.
 
 Use provider-specific tokens with the minimum permissions required for inference. Do not place personal access tokens directly in source files or commit them to Git.
 
