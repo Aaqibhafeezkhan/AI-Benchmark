@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ModelConfig } from "@/lib/types"
+import { getModelEngine } from "@/lib/models"
 
 interface ModelPaneProps {
   model: ModelConfig
@@ -13,27 +14,34 @@ interface ModelPaneProps {
 
 export function ModelPane({ model, response, isStreaming }: ModelPaneProps) {
   const [copied, setCopied] = useState(false)
+  const [copyFailed, setCopyFailed] = useState(false)
 
   useEffect(() => {
-    const styleId = `sweep-${model.id}`
-    if (isStreaming && !document.getElementById(styleId)) {
+    const styleId = "sweep-" + model.id
+    const existing = document.getElementById(styleId)
+    if (!isStreaming) {
+      existing?.remove()
+      return
+    }
+    if (!existing) {
       const style = document.createElement("style")
       style.id = styleId
-      style.textContent = `
-        @keyframes sweep-${model.id} {
-          0% { transform: translateX(-100%) }
-          100% { transform: translateX(400%) }
-        }
-      `
+      style.textContent = "@keyframes sweep-" + model.id + " { 0% { transform: translateX(-100%) } 100% { transform: translateX(400%) } }"
       document.head.appendChild(style)
     }
+    return () => document.getElementById(styleId)?.remove()
   }, [isStreaming, model.id])
 
-  const handleCopy = () => {
-    if (response) {
-      navigator.clipboard.writeText(response)
+  const handleCopy = async () => {
+    if (!response) return
+    try {
+      await navigator.clipboard.writeText(response)
       setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
+      setCopyFailed(false)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setCopied(false)
+      setCopyFailed(true)
     }
   }
 
@@ -54,7 +62,7 @@ export function ModelPane({ model, response, isStreaming }: ModelPaneProps) {
             borderColor: `${model.color}55`,
           }}
         >
-          mock
+          {getModelEngine(model.id) === "github" ? "Retired" : getModelEngine(model.id) === "hf" ? "Hugging Face" : "Mock"}
         </Badge>
       </div>
 
@@ -99,7 +107,7 @@ export function ModelPane({ model, response, isStreaming }: ModelPaneProps) {
               onClick={handleCopy}
               className="absolute top-2 right-2"
             >
-              {copied ? "Copied" : "Copy"}
+              {copied ? "Copied" : copyFailed ? "Copy failed" : "Copy"}
             </Button>
           </>
         ) : (

@@ -4,31 +4,33 @@ import { Card, CardContent } from "@/components/ui/card"
 import { ModelConfig, ScoreEntry } from "@/lib/types"
 
 interface WinnerBarProps {
-  models: [ModelConfig, ModelConfig]
+  models: ModelConfig[]
   scores: Record<string, ScoreEntry>
 }
 
 export function WinnerBar({ models, scores }: WinnerBarProps) {
-  const getAverage = (modelId: string) => {
-    const s = scores[modelId]
-    if (!s) return 0
-    return (s.accuracy + s.tone + s.speed) / 3
+  if (models.length < 2) return null
+
+  const getAverage = (modelId: string): number | null => {
+    const score = scores[modelId]
+    if (!score || !["accuracy", "tone", "speed"].every((field) => Number.isFinite(score[field as keyof ScoreEntry]))) return null
+    return (score.accuracy + score.tone + score.speed) / 3
   }
 
   const avgA = getAverage(models[0].id)
   const avgB = getAverage(models[1].id)
 
-  if (avgA === 0 && avgB === 0) return null
+  if (avgA === null || avgB === null) return null
 
   const winner = avgA > avgB ? models[0] : avgB > avgA ? models[1] : null
-  const isDraw = avgA === avgB && avgA > 0
+  const isDraw = avgA === avgB
 
   return (
     <Card
       className="mt-6"
       style={{
-        borderColor: winner ? `${winner.color}55` : "#52525b",
-        backgroundColor: winner ? `${winner.color}11` : "#18181b",
+        borderColor: winner ? winner.color + "55" : "#52525b",
+        backgroundColor: winner ? winner.color + "11" : "#18181b",
       }}
     >
       <CardContent className="py-6 text-center">

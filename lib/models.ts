@@ -69,37 +69,37 @@ export const HF_MODELS: ModelConfig[] = [
 export const GITHUB_MODELS: ModelConfig[] = [
   {
     id: "gh-gpt-4o",
-    label: "OpenAI GPT-4o",
+    label: "OpenAI GPT-4o (Retired)",
     color: "#10b981",
     personality: "github"
   },
   {
     id: "gh-gpt-4o-mini",
-    label: "GPT-4o Mini",
+    label: "GPT-4o Mini (Retired)",
     color: "#22c55e",
     personality: "github"
   },
   {
     id: "gh-phi-3",
-    label: "Microsoft Phi-3",
+    label: "Microsoft Phi-3 (Retired)",
     color: "#6366f1",
     personality: "github"
   },
   {
     id: "gh-mistral-large",
-    label: "Mistral Large",
+    label: "Mistral Large (Retired)",
     color: "#ec4899",
     personality: "github"
   },
   {
     id: "gh-llama-3-3",
-    label: "Llama 3.3 70B",
+    label: "Llama 3.3 70B (Retired)",
     color: "#3b82f6",
     personality: "github"
   },
   {
     id: "gh-ai21",
-    label: "AI21 Jamba",
+    label: "AI21 Jamba (Retired)",
     color: "#f59e0b",
     personality: "github"
   },
