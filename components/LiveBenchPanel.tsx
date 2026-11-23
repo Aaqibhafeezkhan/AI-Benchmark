@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { parseLiveBenchCsv, type LiveBenchRow } from "@/lib/livebench"
 
-const LIVEBENCH_CSV = "https://livebench.ai/table_2026_06_25.csv"
+const LIVEBENCH_CSV = "https://livebench.ai/new-livebench/table_2026_06_25.csv"
 
 export function LiveBenchPanel() {
   const [rows, setRows] = useState<LiveBenchRow[]>([])
