@@ -3,7 +3,7 @@
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Slider } from "@/components/ui/slider"
 import { Separator } from "@/components/ui/separator"
-import { ScoreEntry } from "@/lib/types"
+import type { ScoreEntry } from "@/lib/types"
 
 interface ScorecardProps {
   modelId: string
@@ -28,7 +28,9 @@ export function Scorecard({
   disabled,
   onScore,
 }: ScorecardProps) {
-  const average = Math.round(((score?.accuracy ?? 5) + (score?.tone ?? 5) + (score?.speed ?? 5)) / 3)
+  const values = [score?.accuracy, score?.tone, score?.speed]
+  const isComplete = values.every((value) => typeof value === "number")
+  const average = isComplete ? Math.round(values.reduce<number>((total, value) => total + (value as number), 0) / 3) : null
 
   const getScoreColor = (val: number) => {
     if (val < 4) return "text-red-400"
@@ -37,7 +39,7 @@ export function Scorecard({
   }
 
   return (
-    <Card className="flex-1">
+    <Card className="flex-1 min-w-0">
       <CardHeader>
         <CardTitle style={{ color: modelColor }}>{modelLabel}</CardTitle>
       </CardHeader>
@@ -45,36 +47,32 @@ export function Scorecard({
         {fields.map(({ key, label }) => (
           <div key={key} className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-zinc-400">{label}</span>
-              <span
-                className="text-xs font-medium px-2 py-0.5 rounded-full"
-                style={{
-                  backgroundColor: `${modelColor}22`,
-                  color: modelColor,
-                }}
-              >
-                {score?.[key] ?? 5}
+              <label className="text-sm text-zinc-300" htmlFor={modelId + "-" + key}>{label}</label>
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: modelColor + "22", color: modelColor }}>
+                {score?.[key] ?? "Not scored"}
               </span>
             </div>
             <Slider
+              id={modelId + "-" + key}
               min={1}
               max={10}
               step={1}
               value={[score?.[key] ?? 5]}
               disabled={disabled}
-              onValueChange={([v]) => onScore(modelId, key, v)}
+              onValueChange={([value]) => onScore(modelId, key, value)}
+              aria-label={modelLabel + " " + label + " score"}
               style={{ "--slider-color": modelColor } as React.CSSProperties}
             />
           </div>
         ))}
         <Separator />
         <div className="flex items-end justify-between">
-          <span className="text-sm text-zinc-500">Overall</span>
+          <span className="text-sm text-zinc-400">Overall</span>
           <div className="flex items-baseline gap-1">
-            <span className={`text-4xl font-bold font-mono ${disabled ? "text-zinc-600" : getScoreColor(average)}`}>
-              {disabled ? "—" : average}
+            <span className={`text-4xl font-bold font-mono ${disabled || average === null ? "text-zinc-500" : getScoreColor(average)}`}>
+              {disabled || average === null ? "—" : average}
             </span>
-            <span className="text-sm text-zinc-500">/10</span>
+            <span className="text-sm text-zinc-400">/10</span>
           </div>
         </div>
       </CardContent>

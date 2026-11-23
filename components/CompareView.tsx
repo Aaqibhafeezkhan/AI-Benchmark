@@ -8,7 +8,11 @@ import { ModelPane } from "./ModelPane"
 import { Scorecard } from "./Scorecard"
 import { WinnerBar } from "./WinnerBar"
 import { streamResponse, Personality } from "@/lib/mock-engine"
-import { AVAILABLE_MODELS, DEFAULT_PAIR, getModelEngine, getHFModelId } from "@/lib/models"
+import { readSSEStream } from "@/lib/stream-parser"
+import { providerErrorMessage, providerNetworkErrorMessage } from "@/lib/provider-errors"
+import { determineWinner, emptyScore } from "@/lib/scoring"
+import { BENCHMARK_PROMPTS } from "@/lib/benchmarks"
+import { AVAILABLE_MODELS, DEFAULT_PAIR, MODEL_CATALOG, getModelEngine, getHFModelId } from "@/lib/models"
 import {
   CompareState,
   CompareAction,
@@ -57,18 +61,6 @@ function calculateHeuristicMetrics(prompt: string, response: string): HeuristicM
   }
 }
 
-function determineWinner(models: Array<{ id: string }>, scores: Record<string, Partial<ScoreEntry> | undefined>): string | "tie" | null {
-  if (models.length < 2) return null
-  const averages = models.slice(0, 2).map((model) => {
-    const score = scores[model.id]
-    if (!score || !["accuracy", "tone", "speed"].every((field) => Number.isFinite(score[field as keyof ScoreEntry]))) return null
-    return ((score.accuracy as number) + (score.tone as number) + (score.speed as number)) / 3
-  })
-  if (averages.some((value) => value === null)) return null
-  if (averages[0] === averages[1]) return "tie"
-  return (averages[0] as number) > (averages[1] as number) ? models[0].id : models[1].id
-}
-
 function toCsv(rows: Array<Record<string, unknown>>): string {
   if (!rows.length) return ""
   const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))]
@@ -115,81 +107,43 @@ async function* streamHuggingFaceResponse(
   token: string,
   signal: AbortSignal
 ): AsyncGenerator<string> {
-  const response = await fetch("https://router.huggingface.co/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: "Bearer " + token,
-    },
-    body: JSON.stringify({
-      model: getHFModelId(modelId) + ":fastest",
-      messages: [{ role: "user", content: prompt }],
-      stream: true,
-      max_tokens: 1024,
-    }),
-    signal,
-  })
+  let response: Response
+  try {
+    response = await fetch("https://router.huggingface.co/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + token,
+      },
+      body: JSON.stringify({
+        model: getHFModelId(modelId) + ":fastest",
+        messages: [{ role: "user", content: prompt }],
+        stream: true,
+        max_tokens: 1024,
+      }),
+      signal,
+    })
+  } catch {
+    if (signal.aborted) return
+    throw new Error(providerNetworkErrorMessage())
+  }
 
   if (!response.ok) {
-    const error = await response.text()
-    throw new Error("Hugging Face Inference error: " + response.status + " " + error)
+    const responseBody = await response.text().catch(() => "")
+    throw new Error(providerErrorMessage(response.status, responseBody))
   }
+  if (!response.body) throw new Error("Hugging Face returned no response stream.")
 
-  const reader = response.body?.getReader()
-  if (!reader) throw new Error("Hugging Face returned no response stream")
-
-  const decoder = new TextDecoder()
-  let buffer = ""
   let receivedContent = false
-
-  const parseEvent = (line: string): { done: boolean; content?: string } => {
-    if (!line.startsWith("data:")) return { done: false }
-    const data = line.slice(5).trim()
-    if (!data) return { done: false }
-    if (data === "[DONE]") return { done: true }
-    try {
-      const parsed = JSON.parse(data)
-      const content = parsed.choices?.[0]?.delta?.content
-      return { done: false, content: typeof content === "string" ? content : undefined }
-    } catch {
-      return { done: false }
+  for await (const event of readSSEStream(response.body, signal)) {
+    if (event.done) return
+    if (event.content !== undefined && event.content.length > 0) {
+      receivedContent = true
+      yield event.content
     }
   }
-
-  try {
-    while (true) {
-      if (signal.aborted) return
-      const result = await reader.read()
-      if (result.done) break
-      buffer += decoder.decode(result.value, { stream: true })
-      const lines = buffer.split(/\r?\n/)
-      buffer = lines.pop() || ""
-      for (const line of lines) {
-        const event = parseEvent(line)
-        if (event.done) return
-        if (event.content) {
-          receivedContent = true
-          yield event.content
-        }
-      }
-    }
-
-    buffer += decoder.decode()
-    for (const line of buffer.split(/\r?\n/)) {
-      const event = parseEvent(line)
-      if (event.done) break
-      if (event.content) {
-        receivedContent = true
-        yield event.content
-      }
-    }
-
-    if (!receivedContent && !signal.aborted) {
-      throw new Error("Hugging Face returned no generated text for this model.")
-    }
-  } finally {
-    await reader.cancel().catch(() => {})
-    reader.releaseLock()
+  if (!receivedContent && !signal.aborted) {
+    throw new Error("The selected model returned no generated text.")
   }
 }
 
@@ -285,7 +239,7 @@ function compareReducer(state: CompareState, action: CompareAction): CompareStat
 }
 
 const initialState: CompareState = {
-  prompt: "",
+  prompt: BENCHMARK_PROMPTS[0]?.prompt ?? "",
   selectedModels: DEFAULT_PAIR,
   responses: {},
   scores: {},
@@ -310,7 +264,7 @@ function getExportData(state: CompareState, models: ModelConfig[]) {
     score: state.scores[model.id] ?? null,
     heuristicMetrics: calculateHeuristicMetrics(state.prompt, state.responses[model.id] ?? ""),
   }))
-  const winnerId = determineWinner(models, state.scores)
+  const winnerId = determineWinner(models.map((model) => model.id), state.scores)
   const winner = winnerId === "tie" ? "Draw" : models.find((model) => model.id === winnerId)?.label ?? null
   return {
     exportedAt: new Date().toISOString(),
@@ -342,9 +296,17 @@ export function CompareView() {
   const activeRunIdRef = useRef<string | null>(null)
   const runInProgressRef = useRef(false)
   const cancelRequestedRef = useRef(false)
+  const mountedRef = useRef(false)
 
   useEffect(() => {
+    mountedRef.current = true
     setHistory(loadRunHistory())
+    return () => {
+      mountedRef.current = false
+      cancelRequestedRef.current = true
+      Object.values(abortControllersRef.current).forEach((controller) => controller.abort())
+      abortControllersRef.current = {}
+    }
   }, [])
 
   const isStreaming = Object.values(state.streaming).some(Boolean)
@@ -401,6 +363,7 @@ export function CompareView() {
             }
 
             for await (const chunk of stream) {
+              if (!mountedRef.current) return
               runResponses[model.id] = (runResponses[model.id] || "") + chunk
               dispatch({
                 type: "APPEND_CHUNK",
@@ -410,10 +373,10 @@ export function CompareView() {
           } catch (err) {
             if (!cancelRequestedRef.current) {
               runFailures[model.id] = err instanceof Error ? err.message : "The model request failed unexpectedly."
-              setError(runFailures[model.id])
+              if (mountedRef.current) setError(runFailures[model.id])
             }
           } finally {
-            dispatch({ type: "END_STREAM", payload: { modelId: model.id } })
+            if (mountedRef.current) dispatch({ type: "END_STREAM", payload: { modelId: model.id } })
             if (abortControllersRef.current[model.id] === controller) {
               delete abortControllersRef.current[model.id]
             }
@@ -421,6 +384,7 @@ export function CompareView() {
         })
       )
 
+      if (!mountedRef.current) return
       const runId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : "run-" + startedAt
       const selectedModels = [...state.selectedModels] as [string, string]
       const savedRun: StoredBenchmarkRun = {
@@ -458,17 +422,17 @@ export function CompareView() {
       if (!run) return
       const nextScores = {
         ...run.scores,
-        [modelId]: { ...(run.scores[modelId] ?? {}), [field]: value },
+        [modelId]: { ...emptyScore(), ...(run.scores[modelId] ?? {}), [field]: value },
       } as Record<string, ScoreEntry>
-      const runModels = run.selectedModels.map((id) => AVAILABLE_MODELS.find((item) => item.id === id)).filter(Boolean) as ModelConfig[]
-      const updated = { ...run, scores: nextScores, winner: determineWinner(runModels, nextScores) }
+      const runModels = run.selectedModels.map((id) => MODEL_CATALOG.find((item) => item.id === id)).filter(Boolean) as ModelConfig[]
+      const updated = { ...run, scores: nextScores, winner: determineWinner(runModels.map((model) => model.id), nextScores) }
       setHistory(updateRunHistory(updated))
     },
     [history]
   )
 
   const models = state.selectedModels.map((id) =>
-    AVAILABLE_MODELS.find((m) => m.id === id)
+    MODEL_CATALOG.find((m) => m.id === id)
   ).filter(Boolean) as ModelConfig[]
 
   const canExport = models.some((model) => Boolean(state.responses[model.id]))
@@ -488,6 +452,11 @@ export function CompareView() {
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2">
+        <p className="text-sm font-medium text-zinc-100">Mode: {hasRetiredModel ? "Saved retired provider" : needsHfToken ? state.selectedModels.some((id) => getModelEngine(id) === "mock") ? "Mixed mock and live" : "Live provider" : "Mock"}</p>
+        <p className="text-xs text-zinc-300">Mock comparisons need no API key.</p>
+      </div>
+      <p className="sr-only" role="status" aria-live="polite">{isStreaming ? "Model responses are streaming." : "Model responses are not streaming."}</p>
       {hasRetiredModel && (
         <p className="rounded-md border border-amber-900 bg-amber-950/30 p-3 text-sm text-amber-300">
           GitHub Models was retired on July 30, 2026. Saved results can still be restored, but this provider cannot run new comparisons.
@@ -500,8 +469,10 @@ export function CompareView() {
             Selected models require API tokens. Tokens stay in memory for this tab and are not saved with run history. The static GitHub Pages build sends provider requests from your browser; use only your own limited-scope tokens.
           </p>
           <div>
-            <label className="text-xs text-zinc-500 block mb-1">Hugging Face Inference token</label>
+            <label htmlFor="hf-token" className="text-sm text-zinc-300 block mb-1">Hugging Face Inference token</label>
             <Textarea
+              id="hf-token"
+              aria-label="Hugging Face Inference token"
               value={hfToken}
               onChange={(e) => setHfToken(e.target.value)}
               placeholder="hf_..."
@@ -513,8 +484,9 @@ export function CompareView() {
       )}
 
       {error && (
-        <div className="bg-red-950/50 border border-red-800 text-red-400 rounded-lg p-3 text-sm">
-          {error}
+        <div role="alert" className="bg-red-950/50 border border-red-800 text-red-200 rounded-lg p-3 text-sm flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <span>{error}</span>
+          <Button variant="outline" size="sm" onClick={() => void handleCompare()} disabled={isStreaming}>Retry</Button>
         </div>
       )}
 

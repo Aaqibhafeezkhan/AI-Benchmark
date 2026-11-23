@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { AVAILABLE_MODELS } from "@/lib/models"
+import { AVAILABLE_MODELS, MODEL_CATALOG } from "@/lib/models"
 import { BENCHMARK_PROMPTS, LATEST_BENCHMARKS } from "@/lib/benchmarks"
 import { LiveBenchPanel } from "./LiveBenchPanel"
 
@@ -37,9 +37,9 @@ export function PromptInput({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <Select onValueChange={handleBenchmarkChange} disabled={isStreaming}>
-          <SelectTrigger className="w-full sm:w-[320px]">
+          <SelectTrigger className="w-full sm:w-[320px]" aria-label="Choose a benchmark prompt">
             <SelectValue placeholder="Load a benchmark prompt" />
           </SelectTrigger>
           <SelectContent>
@@ -50,11 +50,14 @@ export function PromptInput({
             ))}
           </SelectContent>
         </Select>
-        <span className="text-xs text-zinc-500 whitespace-nowrap">
+        <span className="text-xs text-zinc-400">
           {BENCHMARK_PROMPTS.length} runnable prompts · {LATEST_BENCHMARKS.length} benchmark suites
         </span>
       </div>
+      <label htmlFor="benchmark-prompt" className="block text-sm font-medium text-zinc-200">Prompt</label>
       <Textarea
+        id="benchmark-prompt"
+        aria-label="Benchmark prompt text"
         value={prompt}
         onChange={(e) => onPromptChange(e.target.value)}
         maxLength={2000}
@@ -77,12 +80,13 @@ export function PromptInput({
             onValueChange={(v) => onModelChange(0, v)}
             disabled={isStreaming}
           >
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-full sm:w-[180px]" aria-label="First model">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              {selectedModels[0].startsWith("gh-") ? MODEL_CATALOG.filter((model) => model.id === selectedModels[0]).map((model) => <SelectItem key={model.id} value={model.id} disabled>{model.label} (saved run)</SelectItem>) : null}
               {AVAILABLE_MODELS.map((m) => (
-                <SelectItem key={m.id} value={m.id} disabled={m.id.startsWith("gh-") || m.id === selectedModels[1]}>
+                <SelectItem key={m.id} value={m.id} disabled={m.id === selectedModels[1]}>
                   {m.label}
                 </SelectItem>
               ))}
@@ -93,12 +97,13 @@ export function PromptInput({
             onValueChange={(v) => onModelChange(1, v)}
             disabled={isStreaming}
           >
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-full sm:w-[180px]" aria-label="Second model">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              {selectedModels[1].startsWith("gh-") ? MODEL_CATALOG.filter((model) => model.id === selectedModels[1]).map((model) => <SelectItem key={model.id} value={model.id} disabled>{model.label} (saved run)</SelectItem>) : null}
               {AVAILABLE_MODELS.map((m) => (
-                <SelectItem key={m.id} value={m.id} disabled={m.id.startsWith("gh-") || m.id === selectedModels[0]}>
+                <SelectItem key={m.id} value={m.id} disabled={m.id === selectedModels[0]}>
                   {m.label}
                 </SelectItem>
               ))}
