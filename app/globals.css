@@ -2,50 +2,77 @@
 @tailwind components;
 @tailwind utilities;
 
-[style*="--slider-color"] [data-slot="slider-thumb"] {
-  background: var(--slider-color);
-  border-color: var(--slider-color);
+:root {
+  color-scheme: dark;
+  background: #070b14;
 }
 
-[style*="--slider-color"] [data-slot="slider-range"] {
-  background: var(--slider-color);
+html {
+  scroll-behavior: smooth;
+  background: #070b14;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse at 6% 0%, rgba(31, 111, 107, 0.17), transparent 32rem),
+    radial-gradient(ellipse at 88% 16%, rgba(85, 70, 151, 0.13), transparent 30rem),
+    linear-gradient(180deg, #0a1020 0%, #070b14 46%, #080c16 100%);
+  color: #e2e8f0;
+}
+
+::selection {
+  background: rgba(94, 234, 212, 0.28);
+  color: #f8fafc;
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: #080c16;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
-  border-radius: 3px;
+  border-radius: 999px;
+  background: #334155;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+.studio-panel {
+  border: 1px solid rgba(148, 163, 184, 0.13);
+  border-radius: 1.4rem;
+  background: linear-gradient(145deg, rgba(16, 26, 46, 0.92), rgba(10, 16, 30, 0.9));
+  padding: 1.25rem;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18), inset 0 1px rgba(255, 255, 255, 0.025);
 }
 
-@keyframes blink {
-  0%, 100% { opacity: 1 }
-  50% { opacity: 0 }
+.stat-tile {
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 1rem;
+  background: rgba(15, 23, 42, 0.58);
+  padding: 1rem 1.1rem;
 }
 
-@keyframes sweep {
-  0% { transform: translateX(-100%) }
-  100% { transform: translateX(400%) }
+.eyebrow {
+  color: #7dd3c7;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.17em;
+  line-height: 1.3;
+  text-transform: uppercase;
 }
 
-.dark {
-  color-scheme: dark;
+.text-gradient {
+  background: linear-gradient(100deg, #a5f3e8 0%, #8cc7f3 45%, #c4b5fd 100%);
+  background-clip: text;
+  color: transparent;
 }
 
-:focus-visible {
-  outline: 2px solid #a5b4fc;
-  outline-offset: 3px;
+.field-surface:focus-visible {
+  outline: 2px solid rgba(94, 234, 212, 0.72);
+  outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {

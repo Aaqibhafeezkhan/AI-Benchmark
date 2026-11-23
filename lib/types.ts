@@ -1,4 +1,16 @@
-export type ModelConfig = { id: string; label: string; color: string; personality: string }
+export type ModelConfig = {
+  id: string
+  label: string
+  color: string
+  personality: string
+  modelId?: string
+  providers?: string[]
+  providerCount?: number
+  contextLength?: number
+  throughput?: number
+  firstTokenLatencyMs?: number
+  createdAt?: number
+}
 
 export type ScoreEntry = { accuracy: number | null; tone: number | null; speed: number | null }
 

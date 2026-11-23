@@ -3,10 +3,11 @@ import { describe, it } from "node:test"
 import { createSeededRandom, RESPONSE_TEMPLATES, streamResponse } from "./mock-engine"
 import { parseSSEChunks, type StreamChunkEvent } from "./stream-parser"
 import { determineWinner, emptyScore } from "./scoring"
-import { parseLiveBenchCsv } from "./livebench"
 import { canTransitionBenchmarkRunStatus } from "./benchmark-contracts"
 import { providerErrorMessage, providerNetworkErrorMessage } from "./provider-errors"
-import { AVAILABLE_MODELS, RETIRED_MODELS } from "./models"
+import { AVAILABLE_MODELS, RETIRED_MODELS, DEFAULT_PAIR, HF_MODELS } from "./models"
+import { parseHuggingFaceModelCatalog } from "./hf-catalog"
+import { LATEST_BENCHMARKS } from "./benchmarks"
 
 async function collectMock(prompt: string, seed: number): Promise<string> {
   const controller = new AbortController()
@@ -102,35 +103,6 @@ describe("winner determination", () => {
   })
 })
 
-describe("LiveBench CSV parser", () => {
-  it("parses well-formed task rows", () => {
-    assert.deepEqual(parseLiveBenchCsv("model,reasoning,coding\nModel A,8.1,7.5\n"), {
-      columns: ["reasoning", "coding"],
-      rows: [{ model: "Model A", scores: { reasoning: "8.1", coding: "7.5" } }],
-    })
-  })
-
-  it("rejects a missing model column", () => {
-    assert.throws(() => parseLiveBenchCsv("reasoning,coding\n8.1,7.5"), /model column/)
-  })
-
-  it("handles empty files and header-only data", () => {
-    assert.deepEqual(parseLiveBenchCsv(""), { columns: [], rows: [] })
-    assert.deepEqual(parseLiveBenchCsv("model,reasoning\n"), { columns: [], rows: [] })
-  })
-
-  it("preserves quoted commas and escaped quotes", () => {
-    const parsed = parseLiveBenchCsv('model,reasoning\n"Model, ""Fast""",8.1\n')
-    assert.deepEqual(parsed.rows[0], { model: 'Model, "Fast"', scores: { reasoning: "8.1" } })
-  })
-
-  it("does not invent an overall column", () => {
-    const parsed = parseLiveBenchCsv("model,reasoning,coding\nModel A,8,9\n")
-    assert.equal(parsed.columns.includes("overall"), false)
-    assert.equal(Object.hasOwn(parsed.rows[0].scores, "overall"), false)
-  })
-})
-
 describe("benchmark contract lifecycle", () => {
   it("allows valid pending and running transitions", () => {
     assert.equal(canTransitionBenchmarkRunStatus("pending", "running"), true)
@@ -171,5 +143,75 @@ describe("model catalog", () => {
   it("does not expose retired models as selectable models", () => {
     assert.equal(AVAILABLE_MODELS.some((model) => model.id.startsWith("gh-")), false)
     assert.equal(RETIRED_MODELS.some((model) => model.id.startsWith("gh-")), true)
+  })
+})
+
+
+describe("Hugging Face model discovery", () => {
+  it("keeps live text chat models and sorts newer entries first", () => {
+    const catalog = parseHuggingFaceModelCatalog({
+      data: [
+        {
+          id: "org/older-chat",
+          created: 10,
+          architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+          providers: [
+            { provider: "provider-b", status: "live", context_length: 1000, throughput: 22 },
+            { provider: "provider-a", status: "live", context_length: 2000, throughput: 18 },
+            { provider: "offline", status: "error", context_length: 9000 },
+          ],
+        },
+        {
+          id: "org/newer-chat",
+          created: 20,
+          providers: [{ provider: "provider-c", status: "live", first_token_latency_ms: 300 }],
+        },
+        {
+          id: "org/image-only",
+          created: 30,
+          architecture: { input_modalities: ["image"], output_modalities: ["image"] },
+          providers: [{ provider: "provider-d", status: "live" }],
+        },
+        {
+          id: "org/offline",
+          providers: [{ provider: "provider-e", status: "error" }],
+        },
+      ],
+    })
+
+    assert.equal(catalog.length, 2)
+    assert.equal(catalog[0].id, "hf-org/newer-chat")
+    assert.equal(catalog[1].id, "hf-org/older-chat")
+    assert.deepEqual(catalog[1].providers, ["provider-a", "provider-b"])
+    assert.equal(catalog[1].providerCount, 2)
+    assert.equal(catalog[1].contextLength, 2000)
+    assert.equal(catalog[1].throughput, 22)
+  })
+
+  it("rejects malformed catalogue payloads", () => {
+    assert.throws(() => parseHuggingFaceModelCatalog({ models: [] }), /unrecognized model catalogue/)
+    assert.deepEqual(parseHuggingFaceModelCatalog({ data: [] }), [])
+  })
+
+  it("uses current hosted models as the default comparison pair", () => {
+    assert.ok(DEFAULT_PAIR.every((id) => id.startsWith("hf-")))
+    assert.ok(DEFAULT_PAIR.every((id) => HF_MODELS.some((model) => model.id === id)))
+    assert.equal(AVAILABLE_MODELS.some((model) => model.id === "gpt-4o" || model.id === "claude-sonnet"), false)
+  })
+})
+
+describe("open benchmark directory", () => {
+  it("contains source-linked suites with licence and runner metadata", () => {
+    assert.ok(LATEST_BENCHMARKS.length >= 20)
+    assert.ok(LATEST_BENCHMARKS.every((item) => item.href.startsWith("https://") && item.license.length > 0 && item.executionMode.length > 0))
+  })
+
+  it("excludes LiveBench and proprietary benchmark indexes", () => {
+    assert.equal(LATEST_BENCHMARKS.some((item) => /livebench|artificial analysis/i.test(item.name + " " + item.source)), false)
+  })
+
+  it("distinguishes code-runner and agent-environment suites", () => {
+    assert.ok(LATEST_BENCHMARKS.some((item) => item.executionMode === "Code execution harness"))
+    assert.ok(LATEST_BENCHMARKS.some((item) => item.executionMode === "Agent environment"))
   })
 })

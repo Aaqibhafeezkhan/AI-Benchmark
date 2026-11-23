@@ -1,123 +1,102 @@
 # AI Benchmark
 
-AI Benchmark is a Next.js application for comparing LLM responses side by side. It supports mock simulations for offline experimentation and real model calls through supported providers, with streamed responses and manual scoring.
+AI Benchmark is an open model comparison workspace. It discovers chat models currently served by Hugging Face Inference Providers, streams two responses side by side, and provides a source-linked directory of open evaluation suites.
 
-## What you can do
+## What the application does
 
-- Compare two models against the same prompt in real time.
-- Load runnable benchmark prompts for coding, reasoning, summarization, instruction following and factual QA.
-- View the latest LiveBench leaderboard directly from its public release data.
-- Use mock models without API keys.
-- Use Hugging Face Inference Providers for supported real-model calls when you supply your own token.
-- Keep in mind that GitHub Models was retired on July 30, 2026; its former model choices are marked as retired and cannot run new comparisons.
-- Score responses manually and inspect the winner for the current comparison.
+- Discovers current text chat models from the Hugging Face router model catalogue.
+- Keeps a curated fallback list for environments where model discovery is unavailable.
+- Compares two hosted models with the same prompt and streams both answers.
+- Lets you score accuracy, clarity, and speed manually.
+- Stores up to 30 runs in the current browser and supports JSON, Markdown, and CSV exports.
+- Links to open benchmark repositories across knowledge, reasoning, coding, agents, long context, and safety.
+
+The default comparison uses current Hugging Face-served models rather than the old GPT-4o and Claude 3.5 mock simulations. Historical mock and retired-provider records remain available when restoring older browser-local runs, but they are not selectable for new live comparisons.
 
 ## Run locally
 
-```bash
-npm install
-npm run dev
-```
-
-Open `http://localhost:3000/AI-Benchmark` in your browser.
-
-For a production check:
-
-```bash
-npm run build
-npx serve out
-```
-
-## Benchmark contract
-
-A **playground comparison** is an interactive side-by-side model experience. It can use mock or live providers, manual scoring and ad-hoc prompts, and is primarily intended for exploration.
-
-A **benchmark run** is a reproducible evaluation record built around a versioned `BenchmarkCase`, explicit `BenchmarkModel` metadata, execution status and timestamps, per-model responses, scores and an explicit winner or tie. The contract types live in `lib/benchmark-contracts.ts` and are versioned with `BENCHMARK_CONTRACT_VERSION`.
-
-The contract separates:
-
-- **Case**: the versioned prompt and task category being evaluated.
-- **Model**: provider, model identity and mock/provider execution mode.
-- **Run**: one execution of one case against a defined model set, including lifecycle status and timing metadata.
-- **Score**: manual evaluation dimensions. A missing score is represented by `null` rather than an implicit zero.
-- **Result**: the response, score, timing and error state for each model in a run.
-- **Winner**: one model identifier, an explicit `tie`, or `null` when a run has not produced a scored outcome.
-
-The contract does not claim that a live model comparison is scientifically reproducible across time. Provider behavior, model versions, network conditions, rate limits and external service changes can affect live results. Mock mode is useful for deterministic UI experimentation, while provider-backed runs should be treated as observations from the selected model and configuration at execution time.
-
-## Benchmarks
-
-The application separates runnable prompts from benchmark metadata. Runnable prompts are designed for repeatable side-by-side comparisons. The benchmark catalog currently tracks the latest public releases used as reference points:
-
-- LiveBench 2026-06-25: 23 objective tasks across Reasoning, Coding, Agentic Coding, Mathematics, Data Analysis, Language and Instruction Following.
-- Artificial Analysis Intelligence Index v4.1.1: GDPval-AA v2, τ³-Banking, Terminal-Bench v2.1, SciCode, Humanity's Last Exam, GPQA Diamond, CritPt, AA-Omniscience and AA-LCR.
-
-LiveBench questions and scores are maintained by LiveBench rather than copied into this repository. The application fetches the public LiveBench CSV at runtime and refreshes it every five minutes, with a manual refresh control. It displays the release's task-level scores dynamically; it does not invent an overall composite score when the CSV has no such column. This keeps displayed benchmark results current without requiring a new application build.
-
-LiveBench source: https://livebench.ai/
-
-Artificial Analysis source: https://artificialanalysis.ai/models/
-
-The benchmark leaderboard is reference data. AI Benchmark's actual model comparisons remain live calls against the selected provider or local mock engine, so a benchmark run measures the responses produced at the time you run it.
-
-## Model modes
-
-### Mock mode
-
-Models marked as mock use the local simulation engine and do not make network calls. This is the easiest mode for testing the UI or deploying a public demo without asking visitors for credentials.
-
-### Real provider mode
-
-The application calls Hugging Face Inference Providers when the user supplies a token during the session. GitHub Models was retired on July 30, 2026, so its former choices remain labelled as retired for existing saved runs but cannot execute new comparisons. Tokens are not committed to the repository.
-
-Hugging Face requests use its OpenAI-compatible chat completions endpoint. Availability varies by model and inference provider, so check the selected model's current provider support if a request fails.
-
-Use provider-specific tokens with the minimum permissions required for inference. Do not place personal access tokens directly in source files or commit them to Git.
-
-## Manual GitHub Pages deployment
-
-The repository uses GitHub Actions only for deployment and the workflow is intentionally manual. It runs only when you trigger it from the GitHub Actions tab with `workflow_dispatch`.
-
-1. Open the repository on GitHub.
-2. Go to **Settings → Pages**.
-3. Under **Build and deployment**, select **GitHub Actions** as the source.
-4. Go to **Actions** and select **Deploy to GitHub Pages**.
-5. Click **Run workflow** and run it from `main`.
-6. Wait for the build and deployment jobs to finish.
-7. Open the published Pages URL shown by the deployment environment.
-
-The Next.js configuration uses static export mode and the repository path `/AI-Benchmark` as its Pages base path. The workflow publishes the generated `out` directory.
-
-### Local Pages build check
-
-Before triggering deployment, verify the static export locally:
+Use Node 20 or a supported version from the package engine range.
 
 ```bash
 npm ci
+npm run dev
+```
+
+Open `http://localhost:3000/AI-Benchmark`.
+
+Before opening a change, run:
+
+```bash
+npm run lint
+npm run typecheck
+npm run test
+npm run build
+```
+
+## Model discovery and provider calls
+
+The application reads `https://router.huggingface.co/v1/models`. The router catalogue describes models and their provider routes, including whether a route is live and optional context length, first-token latency, and throughput. AI Benchmark filters for models with at least one live text provider, sorts by model creation time when available, and keeps provider metadata for display.
+
+The application also carries a small curated fallback list. The model selector shows the live discovered catalogue first and includes those fallback models when they are not already present. Use **Refresh model catalogue** to retry discovery; a Hugging Face token can also be supplied for the refresh request.
+
+Actual chat requests use the OpenAI-compatible Hugging Face endpoint:
+
+`https://router.huggingface.co/v1/chat/completions`
+
+The selected model is sent with the `:fastest` routing suffix. Hugging Face chooses among providers serving that model. Provider availability, model access, context limits, pricing, and performance can change. Check the model's current page and terms before use. Open weights do not mean every model has an OSI-approved open-source licence.
+
+A Hugging Face Inference token is entered by the visitor. It remains in page memory and is sent from the browser to Hugging Face. It is not stored in localStorage, browser history, run records, or exports. This project is a static GitHub Pages application and does not provide server-side secret storage.
+
+## Open benchmark directory
+
+The in-app directory links to public benchmark repositories and distinguishes prompt evaluators, code execution harnesses, agent environments, and long-context runners. Its current catalogue includes:
+
+| Area | Suites |
+| --- | --- |
+| Knowledge and reasoning | MMLU-Pro, GPQA Diamond, BIG-Bench Hard, TruthfulQA |
+| Mathematics | GSM8K, MATH |
+| Instruction following | IFEval |
+| Code generation | HumanEval, MBPP, LiveCodeBench, BigCodeBench |
+| Software engineering and agents | SWE-bench Verified, Terminal-Bench, BFCL V4, WebArena, AgentBench, OSWorld |
+| Long context | LongBench v2, RULER |
+| Safety | HarmBench |
+
+The directory intentionally does not treat benchmark names as comparable scores. It does not download official datasets or run the full benchmark harnesses in the browser. Code-generation suites need isolated execution and grading; agent suites need their own tools and environments. The prompt picker contains original starter prompts for quick pairwise exploration. Those prompts are not official benchmark questions and their results must not be represented as benchmark scores.
+
+The licence shown in each card is the upstream repository code licence where verified. Dataset files, task content, model weights, and hosted leaderboards may have separate terms. Check the official source before downloading or redistributing any data.
+
+## Comparison methodology
+
+A comparison sends the same prompt to two selected models and records their streamed text. Manual scores are subjective. Automatic signals such as prompt-term coverage, response length, and formatting are heuristics only; they do not measure factual correctness or overall model quality.
+
+For meaningful evaluations, keep the prompt, model identifier, provider route, generation settings, and runner version fixed. For official benchmark reporting, use the benchmark's own recommended dataset, harness, and grading procedure.
+
+## GitHub Pages deployment
+
+The repository uses Next.js static export with the `/AI-Benchmark` base path. The Pages workflow is intentionally manual.
+
+1. Open the repository's **Actions** tab.
+2. Select **Deploy to GitHub Pages**.
+3. Run the workflow from `main`.
+4. Wait for the build and deployment jobs to finish.
+5. Open the published Pages URL shown by the workflow.
+
+For a local static build:
+
+```bash
 npm run build
 npx serve out
 ```
 
-Then open the local server and verify navigation, benchmark selection, live leaderboard loading, mock-model comparisons and scoring.
+## Project structure
 
-## Extending the project
+- `components/CompareView.tsx`: streaming comparisons, local history, scoring, and exports.
+- `components/PromptInput.tsx`: prompt and model selection.
+- `components/BenchmarkLibrary.tsx`: searchable benchmark directory.
+- `lib/hf-catalog.ts`: Hugging Face model discovery and response validation.
+- `lib/models.ts`: current fallback models and historical model labels.
+- `lib/benchmarks.ts`: starter prompts and benchmark source metadata.
+- `lib/stream-parser.ts`: incremental server-sent event parsing.
+- `lib/scoring.ts`: total-score winner and tie logic.
 
-### Add a benchmark prompt
-
-Add a new entry to `BENCHMARK_PROMPTS` in `lib/benchmarks.ts`. Keep prompts focused on one capability so comparisons are easier to interpret.
-
-### Track a benchmark release
-
-Add a `BenchmarkDefinition` to `LATEST_BENCHMARKS` in `lib/benchmarks.ts` when a new public benchmark release becomes relevant. Keep the release identifier and source explicit.
-
-### Add a mock model
-
-Add an entry to `MOCK_MODELS` in `lib/models.ts` and a corresponding template in `lib/mock-engine.ts`.
-
-### Add a real model
-
-Add the model configuration to the relevant provider list in `lib/models.ts` and update the provider ID mapping. The comparison view routes the selected model to the appropriate response implementation.
-
-## Suggested next step
-
-The strongest next iteration is to turn benchmark definitions into versioned suites with per-task scoring, saved runs and aggregated results. That would move AI Benchmark closer to a reproducible evaluation tool rather than a one-off comparison interface.
+See [Architecture](docs/ARCHITECTURE.md) for implementation details.

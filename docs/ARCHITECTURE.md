@@ -1,59 +1,63 @@
 # Architecture
 
+## Overview
+
+AI Benchmark is a static-exported Next.js application. The browser discovers hosted chat models, sends user-owned inference requests, streams two responses, and stores comparison history locally. The open benchmark directory is a source index; it is not an embedded benchmark execution service.
+
 ## Module map
 
 | Module | Responsibility |
 | --- | --- |
-| `app/page.tsx` | Static-exported application entry point |
-| `components/CompareView.tsx` | Comparison state, provider selection, cancellation, scoring, local history and exports |
-| `components/PromptInput.tsx` | Prompt selection and model controls |
-| `components/ModelPane.tsx` | Streamed response display and copy action |
-| `components/Scorecard.tsx` | Manual accuracy, tone and speed inputs |
+| `app/page.tsx` | Hero, navigation, and evaluation workspace entry point |
+| `components/CompareView.tsx` | Comparison state, provider requests, cancellation, scoring, local history, and exports |
+| `components/PromptInput.tsx` | Starter prompts, model selection, catalogue status, and refresh action |
+| `components/ModelPane.tsx` | Streamed response display, provider metadata, and copy action |
+| `components/Scorecard.tsx` | Manual accuracy, clarity, and speed inputs |
 | `components/WinnerBar.tsx` | Winner and tie presentation |
-| `components/LiveBenchPanel.tsx` | Runtime LiveBench CSV fetch and refresh |
-| `lib/models.ts` | Selectable mock and Hugging Face models plus metadata for retired saved-run entries |
-| `lib/mock-engine.ts` | Deterministic response templates and controllable stream timing |
+| `components/BenchmarkLibrary.tsx` | Searchable catalogue of public benchmark repositories |
+| `lib/hf-catalog.ts` | Parsing and retrieval for the Hugging Face router model catalogue |
+| `lib/models.ts` | Current fallback model list and historical model metadata |
+| `lib/benchmarks.ts` | Original starter prompts and benchmark source metadata |
 | `lib/stream-parser.ts` | Incremental server-sent event parsing |
 | `lib/provider-errors.ts` | Safe provider status-to-message mapping |
-| `lib/scoring.ts` | Total-score winner, tie and unscored semantics |
-| `lib/livebench.ts` | Pure LiveBench CSV parser |
-| `lib/benchmark-contracts.ts` | Versioned benchmark case, model, run, score and lifecycle types |
+| `lib/scoring.ts` | Total-score winner, tie, and unscored semantics |
 
-## Data flow
+## Model discovery
 
-1. The visitor selects a prompt and two distinct models.
-2. The comparison view creates one abort controller per model and prevents overlapping submissions.
-3. Mock selections use local response templates. Hugging Face selections call the OpenAI-compatible Inference Providers endpoint directly from the browser with the visitor's token.
-4. The Hugging Face response body is decoded incrementally as UTF-8 and parsed as server-sent events. The parser handles chunk boundaries, blank lines, malformed JSON events and the terminal marker.
-5. Response chunks update the comparison reducer. The UI presents both responses, heuristic signals and separate manual score controls.
-6. Completed comparisons are stored in browser localStorage. The visitor can restore a run or export the current comparison.
+The catalogue request is sent to `GET https://router.huggingface.co/v1/models`. The parser treats the response as unknown data and validates the top-level `data` array, model identifiers, provider metadata, and optional architecture fields.
 
-## Contract and scoring
+A selectable live entry must have at least one provider with `status: "live"`. When text input or output modalities are explicitly provided, the entry must support text. Provider names are deduplicated, available context lengths and throughput values are summarized, and the first-token latency uses the best reported value. Entries are sorted by creation timestamp when present.
 
-The contract version is defined by `BENCHMARK_CONTRACT_VERSION` in `lib/benchmark-contracts.ts`. A run status may move from pending to running or cancelled, and from running to completed, failed or cancelled. Terminal states do not transition.
+The application keeps a curated fallback list of current model identifiers. The live catalogue is shown first and fallback entries are appended only when not already present. If discovery fails, the interface explains that it has switched to the curated list. A user can retry discovery and optionally send their own Hugging Face token with the request.
 
-A score contains accuracy, tone and speed. Each dimension may be null until the visitor records a value. Winner calculation uses the sum of the three dimensions for both models. Higher total wins, equal totals produce a tie and any missing dimension leaves the outcome null.
+## Provider streaming
 
-## Streaming and cancellation
+The comparison view sends the same prompt to two distinct Hugging Face model identifiers through the OpenAI-compatible chat completion endpoint. The `:fastest` suffix asks the router to choose a high-throughput route. One abort controller is created per model. Parent cancellation propagates to each request, and a bounded timeout prevents the UI from waiting indefinitely.
 
-The stream parser uses `TextDecoder` with streaming enabled, so a multi-byte UTF-8 character split across network chunks is reconstructed before line parsing. Event data is buffered until a blank line. Malformed event payloads are ignored; the parser stops at `[DONE]`. The reader is cancelled and its lock released when the stream ends or is aborted.
+The response body is decoded incrementally as UTF-8 and parsed as server-sent events. The parser handles arbitrary chunk boundaries, blank lines, malformed JSON events, and the terminal marker. It cancels and releases the stream reader when the stream ends or the request is aborted.
 
-Each provider request has a bounded timeout. The parent abort signal propagates to the request. The mock engine accepts injected random and wait functions so tests can control pacing without changing generated text.
+## Benchmark directory and execution boundary
 
-## Persistence
+The benchmark directory is maintained in `lib/benchmarks.ts`. Each record contains a source repository URL, category, code licence note, and expected execution mode. The catalogue includes knowledge, reasoning, mathematics, instruction following, coding, software engineering, agent, long-context, and safety suites. The current list excludes LiveBench and proprietary benchmark indexes.
 
-The current history key is `ai-benchmark:run-history:v1`. It stores at most 30 recent runs in localStorage, newest first. Storage reads and writes are guarded so unavailable storage or quota failures do not prevent the active comparison from being viewed in memory. This is browser-local persistence, not a shared account history.
+The code licence displayed in a card refers to the upstream repository code where verified. Dataset content, task data, model weights, and leaderboard terms can be separate. Users must check the official source before using or redistributing those assets.
 
-## Token handling
+The browser runs original starter prompts only. It does not execute HumanEval, SWE-bench, Terminal-Bench, WebArena, desktop agents, or other official harnesses. Those suites require their official datasets, sandbox, tool environment, and grading process. The app does not publish benchmark scores or simulate official results.
 
-The Hugging Face token is held in React component state for the active page session. It is sent in the authorization header to the Hugging Face endpoint. It is not written to localStorage, sessionStorage, IndexedDB, cookies, URLs, logs, run records or exports. Provider error messages are mapped to fixed user-readable text rather than displaying raw response bodies.
+## Scoring
 
-GitHub Pages is static hosting. The token is visible to the browser session and the provider request; this application cannot provide server-side secret storage without a backend. Users should supply their own limited-scope inference tokens and clear the page session when finished.
+A manual score contains accuracy, clarity, and speed. Each dimension may be null until a visitor records a value. Winner calculation uses the sum of all three dimensions for both models. Higher total wins, equal totals produce a tie, and a missing dimension leaves the outcome unscored.
 
-## Decisions and rejected alternatives
+Prompt-term coverage, response length, sentence count, and formatting are heuristic signals only. They are not correctness scores and must not be presented as official benchmark results.
 
-- Keep static export and manual Pages deployment instead of adding a server route that Pages cannot host.
-- Keep provider tokens user-supplied rather than introducing shared credentials or authentication.
-- Keep manual scoring explicit instead of treating response length or token estimates as quality scores.
-- Keep retired provider metadata only to label older local runs; retired models are not selectable for new comparisons.
-- Keep local history limited to the current browser. Aggregate tables, portable run collections and versioned suite execution remain future work.
+## Persistence and token handling
+
+The history key is `ai-benchmark:run-history:v1`. It stores up to 30 recent runs in browser localStorage, newest first. Reads and writes are guarded so local storage failures do not prevent a current comparison from being viewed.
+
+The Hugging Face token is held in React state for the current page session. It is sent in the authorization header and is not written to storage, URLs, logs, run records, or exports. GitHub Pages is static hosting and cannot provide server-side secret storage.
+
+Historical mock and retired provider metadata remains in the model catalogue for restoring earlier saved runs. These models are not selectable for new comparisons.
+
+## Deployment
+
+Next.js uses static export and the repository base path `/AI-Benchmark`. The GitHub Pages workflow remains manual and publishes the generated `out` directory. Provider requests are performed by the visitor's browser at runtime.

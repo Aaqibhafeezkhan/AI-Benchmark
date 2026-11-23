@@ -12,10 +12,10 @@
     "nextjs",
     "typescript",
     "streaming",
-    "livebench",
     "tailwindcss",
     "huggingface",
-    "github-pages"
+    "github-pages",
+    "open-benchmarks"
   ],
   "repository": {
     "type": "git",
