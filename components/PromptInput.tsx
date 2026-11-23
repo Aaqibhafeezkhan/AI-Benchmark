@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { AVAILABLE_MODELS } from "@/lib/models"
+import { AVAILABLE_MODELS, MODEL_CATALOG } from "@/lib/models"
 import { BENCHMARK_PROMPTS, LATEST_BENCHMARKS } from "@/lib/benchmarks"
 import { LiveBenchPanel } from "./LiveBenchPanel"
 
@@ -39,7 +39,7 @@ export function PromptInput({
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <Select onValueChange={handleBenchmarkChange} disabled={isStreaming}>
-          <SelectTrigger className="w-full sm:w-[320px]">
+          <SelectTrigger className="w-full sm:w-[320px]" aria-label="Choose a benchmark prompt">
             <SelectValue placeholder="Load a benchmark prompt" />
           </SelectTrigger>
           <SelectContent>
@@ -77,7 +77,7 @@ export function PromptInput({
             onValueChange={(v) => onModelChange(0, v)}
             disabled={isStreaming}
           >
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-full sm:w-[180px]" aria-label="First model">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -93,7 +93,7 @@ export function PromptInput({
             onValueChange={(v) => onModelChange(1, v)}
             disabled={isStreaming}
           >
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-full sm:w-[180px]" aria-label="Second model">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

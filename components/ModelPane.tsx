@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ModelConfig } from "@/lib/types"
@@ -16,22 +16,6 @@ export function ModelPane({ model, response, isStreaming }: ModelPaneProps) {
   const [copied, setCopied] = useState(false)
   const [copyFailed, setCopyFailed] = useState(false)
 
-  useEffect(() => {
-    const styleId = "sweep-" + model.id
-    const existing = document.getElementById(styleId)
-    if (!isStreaming) {
-      existing?.remove()
-      return
-    }
-    if (!existing) {
-      const style = document.createElement("style")
-      style.id = styleId
-      style.textContent = "@keyframes sweep-" + model.id + " { 0% { transform: translateX(-100%) } 100% { transform: translateX(400%) } }"
-      document.head.appendChild(style)
-    }
-    return () => document.getElementById(styleId)?.remove()
-  }, [isStreaming, model.id])
-
   const handleCopy = async () => {
     if (!response) return
     try {
@@ -45,12 +29,8 @@ export function ModelPane({ model, response, isStreaming }: ModelPaneProps) {
     }
   }
 
-  const tokenCount = Math.round(
-    response.split(" ").filter(Boolean).length * 1.33
-  )
-
   return (
-    <div className="flex-1 min-w-[300px]">
+    <div className="flex-1 min-w-0 basis-full sm:basis-[calc(50%-0.5rem)]">
       <div className="flex items-center justify-between mb-2">
         <span className="font-semibold text-slate-100">{model.label}</span>
         <Badge
@@ -74,7 +54,7 @@ export function ModelPane({ model, response, isStreaming }: ModelPaneProps) {
           className="h-full w-1/4"
           style={{
             backgroundColor: model.color,
-            animation: isStreaming ? `sweep-${model.id} 1.2s ease-in-out infinite` : "none",
+            animation: isStreaming ? "sweep 1.2s ease-in-out infinite" : "none",
           }}
         />
       </div>
@@ -89,7 +69,7 @@ export function ModelPane({ model, response, isStreaming }: ModelPaneProps) {
 
         {response ? (
           <>
-            <pre className="font-mono text-sm leading-relaxed text-slate-300 whitespace-pre-wrap">
+            <pre aria-live="off" className="font-mono text-sm leading-relaxed text-slate-300 whitespace-pre-wrap break-words">
               {response}
               {isStreaming && (
                 <span
@@ -117,7 +97,7 @@ export function ModelPane({ model, response, isStreaming }: ModelPaneProps) {
 
       <div className="text-right mt-2">
         <span className="text-xs font-mono text-zinc-600">
-          {tokenCount} tokens
+          {response.length.toLocaleString()} characters
         </span>
       </div>
     </div>
