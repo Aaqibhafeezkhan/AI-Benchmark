@@ -14,42 +14,39 @@ interface ScorecardProps {
   onScore: (modelId: string, field: keyof ScoreEntry, value: number) => void
 }
 
-const fields: { key: keyof ScoreEntry; label: string }[] = [
-  { key: "accuracy", label: "Accuracy" },
-  { key: "tone", label: "Tone" },
-  { key: "speed", label: "Speed" },
+const fields: { key: keyof ScoreEntry; label: string; detail: string }[] = [
+  { key: "accuracy", label: "Accuracy", detail: "Correctness and completeness" },
+  { key: "tone", label: "Clarity", detail: "Clarity, structure, and usefulness" },
+  { key: "speed", label: "Speed", detail: "Perceived response speed" },
 ]
 
-export function Scorecard({
-  modelId,
-  modelLabel,
-  modelColor,
-  score,
-  disabled,
-  onScore,
-}: ScorecardProps) {
+export function Scorecard({ modelId, modelLabel, modelColor, score, disabled, onScore }: ScorecardProps) {
   const values = [score?.accuracy, score?.tone, score?.speed]
   const isComplete = values.every((value) => typeof value === "number")
   const average = isComplete ? Math.round(values.reduce<number>((total, value) => total + (value as number), 0) / 3) : null
 
-  const getScoreColor = (val: number) => {
-    if (val < 4) return "text-red-400"
-    if (val <= 6) return "text-amber-400"
-    return "text-emerald-400"
+  const getScoreColor = (value: number) => {
+    if (value < 4) return "text-rose-300"
+    if (value <= 6) return "text-amber-200"
+    return "text-emerald-200"
   }
 
   return (
-    <Card className="flex-1 min-w-0">
-      <CardHeader>
-        <CardTitle style={{ color: modelColor }}>{modelLabel}</CardTitle>
+    <Card className="min-w-0 flex-1 border-white/[0.08] bg-slate-950/55 shadow-none">
+      <CardHeader className="pb-3">
+        <p className="eyebrow">Manual evaluation</p>
+        <CardTitle className="mt-2 truncate text-sm font-semibold text-slate-100">{modelLabel}</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {fields.map(({ key, label }) => (
+      <CardContent className="space-y-5">
+        {fields.map(({ key, label, detail }) => (
           <div key={key} className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-sm text-zinc-300" htmlFor={modelId + "-" + key}>{label}</label>
-              <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: modelColor + "22", color: modelColor }}>
-                {score?.[key] ?? "Not scored"}
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <label className="text-sm font-medium text-slate-200" htmlFor={modelId + "-" + key}>{label}</label>
+                <p className="mt-0.5 text-[10px] text-slate-600">{detail}</p>
+              </div>
+              <span className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-200">
+                {score?.[key] ?? "—"}<span className="ml-0.5 text-[10px] text-slate-600">/10</span>
               </span>
             </div>
             <Slider
@@ -65,14 +62,15 @@ export function Scorecard({
             />
           </div>
         ))}
-        <Separator />
+        <Separator className="bg-white/[0.08]" />
         <div className="flex items-end justify-between">
-          <span className="text-sm text-zinc-400">Overall</span>
+          <div>
+            <span className="text-xs font-medium text-slate-400">Average score</span>
+            <p className="mt-1 text-[10px] text-slate-600">All three dimensions required</p>
+          </div>
           <div className="flex items-baseline gap-1">
-            <span className={`text-4xl font-bold font-mono ${disabled || average === null ? "text-zinc-500" : getScoreColor(average)}`}>
-              {disabled || average === null ? "—" : average}
-            </span>
-            <span className="text-sm text-zinc-400">/10</span>
+            <span className={"font-mono text-3xl font-semibold " + (disabled || average === null ? "text-slate-600" : getScoreColor(average))}>{disabled || average === null ? "—" : average}</span>
+            <span className="text-xs text-slate-500">/10</span>
           </div>
         </div>
       </CardContent>

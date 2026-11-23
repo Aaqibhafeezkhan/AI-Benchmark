@@ -6,13 +6,13 @@ const siteUrl = "https://aaqibhafeezkhan.github.io/AI-Benchmark/"
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "AI Benchmark",
+    default: "AI Benchmark | Open Model Evaluation Studio",
     template: "%s | AI Benchmark",
   },
-  description: "Compare two language models on one prompt with streamed responses, manual scoring and public benchmark reference data.",
+  description: "Compare current Hugging Face hosted language models side by side and explore open evaluation suites for reasoning, coding, agents, long context, and safety.",
   openGraph: {
-    title: "AI Benchmark",
-    description: "Compare two language models on one prompt with streamed responses and manual scoring.",
+    title: "AI Benchmark | Open Model Evaluation Studio",
+    description: "Compare current hosted models and explore open evaluation suites.",
     url: siteUrl,
     siteName: "AI Benchmark",
     type: "website",
@@ -20,21 +20,17 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "AI Benchmark",
-    description: "Compare two language models on one prompt with streamed responses and manual scoring.",
+    description: "A modern open model comparison and evaluation workspace.",
   },
   alternates: {
     canonical: siteUrl,
   },
 }
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode
-}>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className="dark">
-      <body className="antialiased bg-[#09090b]">{children}</body>
+      <body className="antialiased">{children}</body>
     </html>
   )
 }

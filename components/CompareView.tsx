@@ -2,8 +2,8 @@
 
 import { useReducer, useRef, useCallback, useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import { PromptInput } from "./PromptInput"
+import { BenchmarkLibrary } from "./BenchmarkLibrary"
 import { ModelPane } from "./ModelPane"
 import { Scorecard } from "./Scorecard"
 import { WinnerBar } from "./WinnerBar"
@@ -11,8 +11,9 @@ import { streamResponse, Personality } from "@/lib/mock-engine"
 import { readSSEStream } from "@/lib/stream-parser"
 import { providerErrorMessage, providerNetworkErrorMessage } from "@/lib/provider-errors"
 import { determineWinner, emptyScore } from "@/lib/scoring"
-import { BENCHMARK_PROMPTS } from "@/lib/benchmarks"
-import { AVAILABLE_MODELS, DEFAULT_PAIR, MODEL_CATALOG, getModelEngine, getHFModelId } from "@/lib/models"
+import { BENCHMARK_PROMPTS, LATEST_BENCHMARKS } from "@/lib/benchmarks"
+import { HF_MODELS, MOCK_MODELS, RETIRED_MODELS, DEFAULT_PAIR, getModelEngine, getHFModelId } from "@/lib/models"
+import { fetchHuggingFaceModelCatalog } from "@/lib/hf-catalog"
 import {
   CompareState,
   CompareAction,
@@ -293,26 +294,60 @@ export function CompareView() {
   const [hfToken, setHfToken] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [history, setHistory] = useState<StoredBenchmarkRun[]>([])
+  const [catalogModels, setCatalogModels] = useState<ModelConfig[]>(HF_MODELS)
+  const [catalogStatus, setCatalogStatus] = useState<"loading" | "live" | "curated">("loading")
+  const [catalogUpdatedAt, setCatalogUpdatedAt] = useState<string | null>(null)
+  const [catalogError, setCatalogError] = useState<string | null>(null)
+  const [isRefreshingModels, setIsRefreshingModels] = useState(false)
   const activeRunIdRef = useRef<string | null>(null)
   const runInProgressRef = useRef(false)
   const cancelRequestedRef = useRef(false)
   const mountedRef = useRef(false)
+  const catalogRequestRef = useRef<AbortController | null>(null)
+
+  const refreshModelCatalog = useCallback(async (token: string) => {
+    catalogRequestRef.current?.abort()
+    const controller = new AbortController()
+    catalogRequestRef.current = controller
+    setIsRefreshingModels(true)
+    setCatalogError(null)
+    try {
+      const discovered = await fetchHuggingFaceModelCatalog(token, controller.signal)
+      if (!mountedRef.current || controller.signal.aborted) return
+      const combined = [...discovered, ...HF_MODELS.filter((fallback) => !discovered.some((model) => model.id === fallback.id))]
+      setCatalogModels(combined)
+      setCatalogStatus("live")
+      setCatalogUpdatedAt(new Date().toISOString())
+    } catch (cause) {
+      if (!mountedRef.current || controller.signal.aborted) return
+      setCatalogModels(HF_MODELS)
+      setCatalogStatus("curated")
+      setCatalogError(cause instanceof Error ? cause.message : "Model discovery is temporarily unavailable.")
+    } finally {
+      if (catalogRequestRef.current === controller) catalogRequestRef.current = null
+      if (mountedRef.current && !controller.signal.aborted) setIsRefreshingModels(false)
+    }
+  }, [])
 
   useEffect(() => {
     mountedRef.current = true
     setHistory(loadRunHistory())
+    void refreshModelCatalog("")
     return () => {
       mountedRef.current = false
       cancelRequestedRef.current = true
       Object.values(abortControllersRef.current).forEach((controller) => controller.abort())
       abortControllersRef.current = {}
+      catalogRequestRef.current?.abort()
+      catalogRequestRef.current = null
     }
-  }, [])
+  }, [refreshModelCatalog])
 
   const isStreaming = Object.values(state.streaming).some(Boolean)
 
-  const needsHfToken = state.selectedModels.some(id => getModelEngine(id) === "hf")
-  const hasRetiredModel = state.selectedModels.some(id => getModelEngine(id) === "github")
+  const needsHfToken = state.selectedModels.some((id) => getModelEngine(id) === "hf")
+  const hasRetiredModel = state.selectedModels.some((id) => getModelEngine(id) === "github")
+  const hasHistoricalModel = state.selectedModels.some((id) => getModelEngine(id) !== "hf")
 
   const handleCompare = useCallback(async () => {
     if (!state.prompt.trim() || isStreaming || runInProgressRef.current) return
@@ -323,8 +358,8 @@ export function CompareView() {
       setError("Choose two different models to compare.")
       return
     }
-    if (hasRetiredModel) {
-      setError("GitHub Models was retired on July 30, 2026. Choose a different provider; saved results remain available in local history.")
+    if (hasRetiredModel || hasHistoricalModel) {
+      setError("This saved comparison uses a retired or simulated model. Choose two current Hugging Face models to start a new live comparison.")
       return
     }
     if (needsHfToken && !hfToken) {
@@ -339,9 +374,15 @@ export function CompareView() {
     const runFailures: Record<string, string> = {}
     dispatch({ type: "RESET_RESPONSES" })
 
+    const modelSources = [...catalogModels, ...MOCK_MODELS, ...RETIRED_MODELS]
     const models = state.selectedModels.map((id) =>
-      AVAILABLE_MODELS.find((model) => model.id === id)
+      modelSources.find((model) => model.id === id)
     ).filter(Boolean) as ModelConfig[]
+    if (models.length !== 2) {
+      setError("One or more saved model IDs are no longer available in the current Hugging Face catalogue. Select two current models.")
+      runInProgressRef.current = false
+      return
+    }
 
     try {
       await Promise.all(
@@ -406,7 +447,7 @@ export function CompareView() {
     } finally {
       runInProgressRef.current = false
     }
-  }, [state.prompt, state.selectedModels, isStreaming, hfToken, needsHfToken, hasRetiredModel])
+  }, [state.prompt, state.selectedModels, isStreaming, hfToken, needsHfToken, hasRetiredModel, hasHistoricalModel, catalogModels])
 
   const handleStop = useCallback(() => {
     if (!runInProgressRef.current) return
@@ -424,16 +465,20 @@ export function CompareView() {
         ...run.scores,
         [modelId]: { ...emptyScore(), ...(run.scores[modelId] ?? {}), [field]: value },
       } as Record<string, ScoreEntry>
-      const runModels = run.selectedModels.map((id) => MODEL_CATALOG.find((item) => item.id === id)).filter(Boolean) as ModelConfig[]
-      const updated = { ...run, scores: nextScores, winner: determineWinner(runModels.map((model) => model.id), nextScores) }
+      const updated = { ...run, scores: nextScores, winner: determineWinner(run.selectedModels, nextScores) }
       setHistory(updateRunHistory(updated))
     },
     [history]
   )
 
-  const models = state.selectedModels.map((id) =>
-    MODEL_CATALOG.find((m) => m.id === id)
-  ).filter(Boolean) as ModelConfig[]
+  const modelSources = [...catalogModels, ...MOCK_MODELS, ...RETIRED_MODELS]
+  const models = state.selectedModels.map((id) => modelSources.find((model) => model.id === id) ?? {
+    id,
+    label: id.startsWith("hf-") ? id.slice(3) : id,
+    color: "#80d8c8",
+    personality: getModelEngine(id),
+    modelId: id.startsWith("hf-") ? id.slice(3) : undefined,
+  })
 
   const canExport = models.some((model) => Boolean(state.responses[model.id]))
   const currentMetrics = models.map((model) => ({ model, metrics: calculateHeuristicMetrics(state.prompt, state.responses[model.id] ?? "") }))
@@ -452,34 +497,43 @@ export function CompareView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2">
-        <p className="text-sm font-medium text-zinc-100">Mode: {hasRetiredModel ? "Saved retired provider" : needsHfToken ? state.selectedModels.some((id) => getModelEngine(id) === "mock") ? "Mixed mock and live" : "Live provider" : "Mock"}</p>
-        <p className="text-xs text-zinc-300">Mock comparisons need no API key.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/[0.08] bg-slate-950/60 px-4 py-3">
+        <div>
+          <p className="text-sm font-medium text-slate-100">Hugging Face Inference Providers</p>
+          <p className="mt-1 text-xs text-slate-500">{catalogStatus === "live" ? catalogModels.length + " models discovered from live provider routes" : catalogStatus === "loading" ? "Checking current model availability" : "Using curated current model choices"}</p>
+        </div>
+        <span className={"rounded-full px-3 py-1.5 text-[11px] font-medium " + (catalogStatus === "live" ? "bg-emerald-300/10 text-emerald-200" : "bg-sky-300/10 text-sky-200")}>{catalogStatus === "live" ? "Catalogue connected" : catalogStatus === "loading" ? "Connecting" : "Fallback mode"}</span>
       </div>
       <p className="sr-only" role="status" aria-live="polite">{isStreaming ? "Model responses are streaming." : "Model responses are not streaming."}</p>
       {hasRetiredModel && (
-        <p className="rounded-md border border-amber-900 bg-amber-950/30 p-3 text-sm text-amber-300">
-          GitHub Models was retired on July 30, 2026. Saved results can still be restored, but this provider cannot run new comparisons.
+        <p className="rounded-xl border border-amber-300/15 bg-amber-300/[0.05] p-3 text-sm text-amber-200">
+          This restored run contains a retired provider. The saved response can be viewed, but new runs must use current Hugging Face models.
+        </p>
+      )}
+      {hasHistoricalModel && !hasRetiredModel && (
+        <p className="rounded-xl border border-sky-300/15 bg-sky-300/[0.04] p-3 text-sm text-sky-100">
+          This restored run contains a historical mock model. Select two current hosted models before running a new comparison.
         </p>
       )}
 
       {needsHfToken && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
-          <p className="text-sm text-zinc-400">
-            Selected models require API tokens. Tokens stay in memory for this tab and are not saved with run history. The static GitHub Pages build sends provider requests from your browser; use only your own limited-scope tokens.
-          </p>
-          <div>
-            <label htmlFor="hf-token" className="text-sm text-zinc-300 block mb-1">Hugging Face Inference token</label>
-            <Textarea
-              id="hf-token"
-              aria-label="Hugging Face Inference token"
-              value={hfToken}
-              onChange={(e) => setHfToken(e.target.value)}
-              placeholder="hf_..."
-              rows={1}
-              className="resize-none font-mono text-xs"
-            />
+        <div className="rounded-2xl border border-white/[0.08] bg-slate-950/60 p-4">
+          <div className="mb-3">
+            <p className="text-sm font-medium text-slate-100">Connect your inference token</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">Stored only in this page's memory. Requests are sent from your browser to Hugging Face; the token is never saved to run history or exports.</p>
           </div>
+          <label htmlFor="hf-token" className="mb-1.5 block text-xs font-medium text-slate-300">Hugging Face Inference token</label>
+          <input
+            id="hf-token"
+            type="password"
+            autoComplete="off"
+            aria-label="Hugging Face Inference token"
+            value={hfToken}
+            onChange={(event) => setHfToken(event.target.value)}
+            placeholder="hf_..."
+            className="field-surface h-11 w-full rounded-xl border border-white/10 bg-slate-900 px-3 font-mono text-xs text-slate-100 outline-none placeholder:text-slate-600"
+          />
+          <p className="mt-2 text-[11px] text-slate-600">Use a token with the minimum Inference Providers permissions required.</p>
         </div>
       )}
 
@@ -493,11 +547,17 @@ export function CompareView() {
       <PromptInput
         prompt={state.prompt}
         selectedModels={state.selectedModels}
+        models={catalogModels}
+        prompts={BENCHMARK_PROMPTS}
+        benchmarkCount={LATEST_BENCHMARKS.length}
         isStreaming={isStreaming}
-        onPromptChange={(v) => dispatch({ type: "SET_PROMPT", payload: v })}
-        onModelChange={(slot, modelId) =>
-          dispatch({ type: "SET_MODEL", payload: { slot, modelId } })
-        }
+        catalogStatus={catalogStatus}
+        catalogUpdatedAt={catalogUpdatedAt}
+        catalogMessage={catalogError ?? (catalogStatus === "live" ? "Live chat models with at least one responding provider." : "Showing a small current-model fallback list. Refresh after adding a token if discovery is blocked.")}
+        isRefreshingModels={isRefreshingModels}
+        onRefreshModels={() => void refreshModelCatalog(hfToken)}
+        onPromptChange={(value) => dispatch({ type: "SET_PROMPT", payload: value })}
+        onModelChange={(slot, modelId) => dispatch({ type: "SET_MODEL", payload: { slot, modelId } })}
         onCompare={handleCompare}
       />
 
@@ -507,7 +567,7 @@ export function CompareView() {
         </Button>
       )}
 
-      <div className="flex flex-wrap gap-4">
+      <div className="grid gap-4 xl:grid-cols-2">
         {models.map((model) => (
           <ModelPane
             key={model.id}
@@ -518,7 +578,7 @@ export function CompareView() {
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-4">
+      <div className="grid gap-4 xl:grid-cols-2">
         {models.map((model) => (
           <Scorecard
             key={model.id}
@@ -546,7 +606,7 @@ export function CompareView() {
         </div>
       )}
 
-      <section className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/50 p-4">
+      <section className="studio-panel space-y-3">
         <div>
           <h2 className="text-sm font-semibold text-slate-200">Automatic evaluation signals</h2>
           <p className="mt-1 text-xs text-zinc-500">Heuristics only. Prompt-term coverage and formatting signals do not establish factual correctness or overall model quality.</p>
@@ -568,7 +628,7 @@ export function CompareView() {
 
       <WinnerBar models={models} scores={state.scores} />
 
-      <section className="space-y-3 rounded-lg border border-zinc-800 p-4">
+      <section className="studio-panel space-y-3">
         <div>
           <h2 className="text-sm font-semibold text-slate-200">Recent run history</h2>
           <p className="mt-1 text-xs text-zinc-500">Saved in this browser only, up to 30 runs. Clearing browser storage removes this history.</p>
@@ -605,6 +665,7 @@ export function CompareView() {
           <p className="text-sm text-zinc-500">No saved runs yet. Complete a comparison to start a local history.</p>
         )}
       </section>
+      <BenchmarkLibrary />
     </div>
   )
 }

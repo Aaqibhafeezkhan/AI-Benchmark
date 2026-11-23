@@ -4,7 +4,15 @@ export type BenchmarkExecutionMode = "mock" | "provider"
 
 export type BenchmarkWinner = string | "tie" | null
 
-export type BenchmarkCategory = "Coding" | "Reasoning" | "Summarization" | "Instruction Following" | "Factual QA"
+export type BenchmarkCategory =
+  | "Knowledge"
+  | "Reasoning"
+  | "Math & STEM"
+  | "Coding"
+  | "Instruction Following"
+  | "Agents & Tools"
+  | "Long Context"
+  | "Safety"
 
 export interface BenchmarkCase {
   id: string
