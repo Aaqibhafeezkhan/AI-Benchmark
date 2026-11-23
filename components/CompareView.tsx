@@ -8,7 +8,7 @@ import { ModelPane } from "./ModelPane"
 import { Scorecard } from "./Scorecard"
 import { WinnerBar } from "./WinnerBar"
 import { streamResponse, Personality } from "@/lib/mock-engine"
-import { AVAILABLE_MODELS, DEFAULT_PAIR, getModelEngine, getHFModelId } from "@/lib/models"
+import { AVAILABLE_MODELS, DEFAULT_PAIR, MODEL_CATALOG, getModelEngine, getHFModelId } from "@/lib/models"
 import {
   CompareState,
   CompareAction,
@@ -460,7 +460,7 @@ export function CompareView() {
         ...run.scores,
         [modelId]: { ...(run.scores[modelId] ?? {}), [field]: value },
       } as Record<string, ScoreEntry>
-      const runModels = run.selectedModels.map((id) => AVAILABLE_MODELS.find((item) => item.id === id)).filter(Boolean) as ModelConfig[]
+      const runModels = run.selectedModels.map((id) => MODEL_CATALOG.find((item) => item.id === id)).filter(Boolean) as ModelConfig[]
       const updated = { ...run, scores: nextScores, winner: determineWinner(runModels, nextScores) }
       setHistory(updateRunHistory(updated))
     },
@@ -468,7 +468,7 @@ export function CompareView() {
   )
 
   const models = state.selectedModels.map((id) =>
-    AVAILABLE_MODELS.find((m) => m.id === id)
+    MODEL_CATALOG.find((m) => m.id === id)
   ).filter(Boolean) as ModelConfig[]
 
   const canExport = models.some((model) => Boolean(state.responses[model.id]))

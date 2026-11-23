@@ -66,7 +66,7 @@ export const HF_MODELS: ModelConfig[] = [
   },
 ]
 
-export const GITHUB_MODELS: ModelConfig[] = [
+export const RETIRED_MODELS: ModelConfig[] = [
   {
     id: "gh-gpt-4o",
     label: "OpenAI GPT-4o (Retired)",
@@ -108,8 +108,9 @@ export const GITHUB_MODELS: ModelConfig[] = [
 export const AVAILABLE_MODELS: ModelConfig[] = [
   ...MOCK_MODELS,
   ...HF_MODELS,
-  ...GITHUB_MODELS,
 ]
+
+export const MODEL_CATALOG: ModelConfig[] = [...AVAILABLE_MODELS, ...RETIRED_MODELS]
 
 export const DEFAULT_PAIR: [string, string] = ["gpt-4o", "claude-sonnet"]
 
@@ -130,14 +131,3 @@ export function getHFModelId(modelId: string): string {
   return map[modelId] || modelId
 }
 
-export function getGitHubModelId(modelId: string): string {
-  const map: Record<string, string> = {
-    "gh-gpt-4o": "openai/gpt-4o",
-    "gh-gpt-4o-mini": "openai/gpt-4o-mini",
-    "gh-phi-3": "microsoft/Phi-3-mini-4k-instruct",
-    "gh-mistral-large": "mistralai/Mistral-large",
-    "gh-llama-3-3": "meta/Llama-3.3-70B-Instruct",
-    "gh-ai21": "ai21labs/AI21-Jamba-Instruct",
-  }
-  return map[modelId] || modelId
-}

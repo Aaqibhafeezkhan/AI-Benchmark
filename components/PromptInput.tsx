@@ -82,7 +82,7 @@ export function PromptInput({
             </SelectTrigger>
             <SelectContent>
               {AVAILABLE_MODELS.map((m) => (
-                <SelectItem key={m.id} value={m.id} disabled={m.id.startsWith("gh-") || m.id === selectedModels[1]}>
+                <SelectItem key={m.id} value={m.id} disabled={m.id === selectedModels[1]}>
                   {m.label}
                 </SelectItem>
               ))}
@@ -98,7 +98,7 @@ export function PromptInput({
             </SelectTrigger>
             <SelectContent>
               {AVAILABLE_MODELS.map((m) => (
-                <SelectItem key={m.id} value={m.id} disabled={m.id.startsWith("gh-") || m.id === selectedModels[0]}>
+                <SelectItem key={m.id} value={m.id} disabled={m.id === selectedModels[0]}>
                   {m.label}
                 </SelectItem>
               ))}
