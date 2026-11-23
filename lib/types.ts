@@ -1,6 +1,6 @@
 export type ModelConfig = { id: string; label: string; color: string; personality: string }
 
-export type ScoreEntry = { accuracy: number; tone: number; speed: number }
+export type ScoreEntry = { accuracy: number | null; tone: number | null; speed: number | null }
 
 export type CompareAction =
   | { type: "SET_PROMPT"; payload: string }
