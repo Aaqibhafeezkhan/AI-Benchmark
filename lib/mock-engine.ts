@@ -70,11 +70,19 @@ function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms))
 }
 
+export interface StreamOptions {
+  random?: () => number
+  wait?: (milliseconds: number) => Promise<void>
+}
+
 export async function* streamResponse(
   prompt: string,
   personality: Personality,
-  signal: AbortSignal
+  signal: AbortSignal,
+  options: StreamOptions = {}
 ): AsyncGenerator<string> {
+  const random = options.random ?? Math.random
+  const wait = options.wait ?? sleep
   const fullResponse = RESPONSE_TEMPLATES[personality](prompt)
 
   for (const char of fullResponse) {
@@ -84,7 +92,7 @@ export async function* streamResponse(
 
     yield char
 
-    let delay = 18 + Math.random() * 12
+    let delay = 18 + random() * 12
 
     if (char === " ") {
       delay += 40
@@ -92,6 +100,6 @@ export async function* streamResponse(
       delay += 120
     }
 
-    await sleep(delay)
+    await wait(delay)
   }
 }
