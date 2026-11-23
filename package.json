@@ -1,12 +1,42 @@
 {
-  "name": "model-benchmark",
-  "version": "0.1.0",
+  "name": "ai-benchmark",
+  "version": "1.0.0",
   "private": true,
+  "description": "Compare language models side by side with streamed responses, manual scoring and public benchmark reference data.",
+  "keywords": [
+    "ai",
+    "llm",
+    "llm-benchmark",
+    "llm-evaluation",
+    "model-benchmarking",
+    "nextjs",
+    "typescript",
+    "streaming",
+    "livebench",
+    "tailwindcss",
+    "huggingface",
+    "github-pages"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Aaqibhafeezkhan/AI-Benchmark.git"
+  },
+  "homepage": "https://aaqibhafeezkhan.github.io/AI-Benchmark/",
+  "bugs": {
+    "url": "https://github.com/Aaqibhafeezkhan/AI-Benchmark/issues"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.17.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "node scripts/lint.cjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test scripts/run-tests.cjs",
+    "screenshots": "node scripts/capture-screenshots.mjs"
   },
   "dependencies": {
     "next": "14.2.28",

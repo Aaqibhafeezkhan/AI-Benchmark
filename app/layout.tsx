@@ -1,8 +1,30 @@
 import type { Metadata } from "next"
 import "./globals.css"
 
+const siteUrl = "https://aaqibhafeezkhan.github.io/AI-Benchmark/"
+
 export const metadata: Metadata = {
-  title: "Model Benchmark",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: "AI Benchmark",
+    template: "%s | AI Benchmark",
+  },
+  description: "Compare two language models on one prompt with streamed responses, manual scoring and public benchmark reference data.",
+  openGraph: {
+    title: "AI Benchmark",
+    description: "Compare two language models on one prompt with streamed responses and manual scoring.",
+    url: siteUrl,
+    siteName: "AI Benchmark",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "AI Benchmark",
+    description: "Compare two language models on one prompt with streamed responses and manual scoring.",
+  },
+  alternates: {
+    canonical: siteUrl,
+  },
 }
 
 export default function RootLayout({

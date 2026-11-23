@@ -384,7 +384,8 @@ export function CompareView() {
         })
       )
 
-      if (!mountedRef.current) return\n      const runId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : "run-" + startedAt
+      if (!mountedRef.current) return
+      const runId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : "run-" + startedAt
       const selectedModels = [...state.selectedModels] as [string, string]
       const savedRun: StoredBenchmarkRun = {
         id: runId,
@@ -452,7 +453,7 @@ export function CompareView() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2">
-        <p className="text-sm font-medium text-zinc-100">Mode: {needsHfToken ? state.selectedModels.some((id) => getModelEngine(id) === "mock") ? "Mixed mock and live" : "Live provider" : "Mock"}</p>
+        <p className="text-sm font-medium text-zinc-100">Mode: {hasRetiredModel ? "Saved retired provider" : needsHfToken ? state.selectedModels.some((id) => getModelEngine(id) === "mock") ? "Mixed mock and live" : "Live provider" : "Mock"}</p>
         <p className="text-xs text-zinc-300">Mock comparisons need no API key.</p>
       </div>
       <p className="sr-only" role="status" aria-live="polite">{isStreaming ? "Model responses are streaming." : "Model responses are not streaming."}</p>
