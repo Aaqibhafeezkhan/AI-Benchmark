@@ -73,13 +73,13 @@ For meaningful evaluations, keep the prompt, model identifier, provider route, g
 
 ## GitHub Pages deployment
 
-The repository uses Next.js static export with the `/AI-Benchmark` base path. The Pages workflow is intentionally manual.
+GitHub Pages must use **GitHub Actions** as its source:
 
-1. Open the repository's **Actions** tab.
-2. Select **Deploy to GitHub Pages**.
-3. Run the workflow from `main`.
-4. Wait for the build and deployment jobs to finish.
-5. Open the published Pages URL shown by the workflow.
+**Repository Settings → Pages → Build and deployment → Source → GitHub Actions**
+
+Once that repository setting is selected, deployment is automatic after a pull request is merged into `main`. The single `.github/workflows/deploy.yml` workflow runs dependency installation, lint, typecheck, tests, and the static build. It uploads and deploys the Pages artifact only when all quality steps pass. Closing a pull request without merging does not run the job.
+
+There is no manual **Run workflow** step and no separate CI workflow. The static export uses the repository base path `/AI-Benchmark`.
 
 For a local static build:
 
