@@ -70,6 +70,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms))
 }
 
+export function createSeededRandom(seed: number): () => number {
+  let state = seed >>> 0
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0
+    return state / 4294967296
+  }
+}
+
 export interface StreamOptions {
   random?: () => number
   wait?: (milliseconds: number) => Promise<void>

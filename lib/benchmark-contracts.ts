@@ -59,3 +59,18 @@ export interface BenchmarkComparisonResult {
 }
 
 export const BENCHMARK_CONTRACT_VERSION = "1.1"
+
+const benchmarkRunTransitions: Record<BenchmarkRunStatus, readonly BenchmarkRunStatus[]> = {
+  pending: ["running", "cancelled"],
+  running: ["completed", "failed", "cancelled"],
+  completed: [],
+  failed: [],
+  cancelled: [],
+}
+
+export function canTransitionBenchmarkRunStatus(
+  current: BenchmarkRunStatus,
+  next: BenchmarkRunStatus
+): boolean {
+  return benchmarkRunTransitions[current].includes(next)
+}
