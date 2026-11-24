@@ -16,3 +16,4 @@ require.extensions[".ts"] = (module, filename) => {
 }
 
 require(path.resolve(__dirname, "../lib/core.test.ts"))
+require(path.resolve(__dirname, "../lib/local-models.test.ts"))

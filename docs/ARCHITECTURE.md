@@ -2,62 +2,32 @@
 
 ## Overview
 
-AI Benchmark is a static-exported Next.js application. The browser discovers hosted chat models, sends user-owned inference requests, streams two responses, and stores comparison history locally. The open benchmark directory is a source index; it is not an embedded benchmark execution service.
+AI Benchmark is a static-exported Next.js application. The browser loads two prebuilt model variants through WebLLM, initializes one local inference engine, streams each model's response concurrently, and stores run history and theme preference in browser localStorage. No application server or inference API is involved.
 
-## Module map
+## Runtime and model catalogue
 
-| Module | Responsibility |
-| --- | --- |
-| `app/page.tsx` | Hero, navigation, and evaluation workspace entry point |
-| `components/CompareView.tsx` | Comparison state, provider requests, cancellation, scoring, local history, and exports |
-| `components/PromptInput.tsx` | Starter prompts, model selection, catalogue status, and refresh action |
-| `components/ModelPane.tsx` | Streamed response display, provider metadata, and copy action |
-| `components/Scorecard.tsx` | Manual accuracy, clarity, and speed inputs |
-| `components/WinnerBar.tsx` | Winner and tie presentation |
-| `components/BenchmarkLibrary.tsx` | Searchable catalogue of public benchmark repositories |
-| `lib/hf-catalog.ts` | Parsing and retrieval for the Hugging Face router model catalogue |
-| `lib/models.ts` | Current fallback model list and historical model metadata |
-| `lib/benchmarks.ts` | Original starter prompts and benchmark source metadata |
-| `lib/stream-parser.ts` | Incremental server-sent event parsing |
-| `lib/provider-errors.ts` | Safe provider status-to-message mapping |
-| `lib/scoring.ts` | Total-score winner, tie, and unscored semantics |
+`lib/local-models.ts` is the curated list of WebLLM prebuilt model identifiers. Each identifier is selected from the library's prebuilt application configuration. The list focuses on compact quantized models that are practical for browser inference.
 
-## Model discovery
+The app checks for `navigator.gpu` and requests an adapter before allowing a comparison. If WebGPU is unavailable or no adapter is returned, the UI displays a compatibility explanation. It does not switch to a hosted provider.
 
-The catalogue request is sent to `GET https://router.huggingface.co/v1/models`. The parser treats the response as unknown data and validates the top-level `data` array, model identifiers, provider metadata, and optional architecture fields.
+## Engine lifecycle and generation
 
-A selectable live entry must have at least one provider with `status: "live"`. When text input or output modalities are explicitly provided, the entry must support text. Provider names are deduplicated, available context lengths and throughput values are summarized, and the first-token latency uses the best reported value. Entries are sorted by creation timestamp when present.
+`components/CompareView.tsx` dynamically imports WebLLM only when the visitor starts a comparison. The selected pair is passed to `CreateMLCEngine` as one array so both models are loaded sequentially into the same engine. The initialization callback updates visible model download and loading progress. The engine is reused for later runs with the same pair; changing the pair unloads the previous engine before loading the new pair.
 
-The application keeps a curated fallback list of current model identifiers. The live catalogue is shown first and fallback entries are appended only when not already present. If discovery fails, the interface explains that it has switched to the curated list. A user can retry discovery and optionally send their own Hugging Face token with the request.
+Both models receive the same user prompt through the OpenAI-compatible `engine.chat.completions.create` interface with streaming enabled and the model identifier specified for each request. The two async streams are consumed concurrently. WebLLM maintains a generation lock per loaded model, allowing requests for distinct loaded models to proceed independently. A single abort controller stops the active comparison and calls the engine interruption method. Model assets are fetched from public MLC assets and cached through the browser Cache API by default.
 
-## Provider streaming
+The first initialization may require a substantial download and GPU memory. Both model weights must fit on the visitor's device simultaneously. Download progress and initialization status are shown in the response panels. Performance and supported model sizes vary with browser, GPU, drivers, memory, and device thermal limits.
 
-The comparison view sends the same prompt to two distinct Hugging Face model identifiers through the OpenAI-compatible chat completion endpoint. The `:fastest` suffix asks the router to choose a high-throughput route. One abort controller is created per model. Parent cancellation propagates to each request, and a bounded timeout prevents the UI from waiting indefinitely.
+## Persistence and theme
 
-The response body is decoded incrementally as UTF-8 and parsed as server-sent events. The parser handles arbitrary chunk boundaries, blank lines, malformed JSON events, and the terminal marker. It cancels and releases the stream reader when the stream ends or the request is aborted.
+The theme key is `ai-benchmark:theme:v1`. The selected value is applied to the document root's `data-theme` attribute and color scheme.
 
-## Benchmark directory and execution boundary
+Run history uses `ai-benchmark:run-history:v1` and stores up to 30 runs newest first. It contains the prompt, model identifiers, generated responses, manual scores, and duration. Reads and writes are guarded against malformed data and unavailable storage. Restored historical runs remain readable even if their previous provider identifiers are no longer selectable for new comparisons.
 
-The benchmark directory is maintained in `lib/benchmarks.ts`. Each record contains a source repository URL, category, code licence note, and expected execution mode. The catalogue includes knowledge, reasoning, mathematics, instruction following, coding, software engineering, agent, long-context, and safety suites. The current list excludes LiveBench and proprietary benchmark indexes.
+## Evaluation and scoring
 
-The code licence displayed in a card refers to the upstream repository code where verified. Dataset content, task data, model weights, and leaderboard terms can be separate. Users must check the official source before using or redistributing those assets.
+The comparison view records streamed responses and supports manual accuracy, tone, and speed scoring. Winner calculation requires all three dimensions for both models; missing values leave the comparison unscored. Scores are subjective. The open benchmark directory is a source index only and does not execute official benchmark tasks or claim official scores.
 
-The browser runs original starter prompts only. It does not execute HumanEval, SWE-bench, Terminal-Bench, WebArena, desktop agents, or other official harnesses. Those suites require their official datasets, sandbox, tool environment, and grading process. The app does not publish benchmark scores or simulate official results.
+## Static deployment
 
-## Scoring
-
-A manual score contains accuracy, clarity, and speed. Each dimension may be null until a visitor records a value. Winner calculation uses the sum of all three dimensions for both models. Higher total wins, equal totals produce a tie, and a missing dimension leaves the outcome unscored.
-
-Prompt-term coverage, response length, sentence count, and formatting are heuristic signals only. They are not correctness scores and must not be presented as official benchmark results.
-
-## Persistence and token handling
-
-The history key is `ai-benchmark:run-history:v1`. It stores up to 30 recent runs in browser localStorage, newest first. Reads and writes are guarded so local storage failures do not prevent a current comparison from being viewed.
-
-The Hugging Face token is held in React state for the current page session. It is sent in the authorization header and is not written to storage, URLs, logs, run records, or exports. GitHub Pages is static hosting and cannot provide server-side secret storage.
-
-Historical mock and retired provider metadata remains in the model catalogue for restoring earlier saved runs. These models are not selectable for new comparisons.
-
-## Deployment
-
-Next.js uses static export and the repository base path `/AI-Benchmark`. The GitHub Pages workflow remains manual and publishes the generated `out` directory. Provider requests are performed by the visitor's browser at runtime.
+Next.js exports the application to `out` with base path `/AI-Benchmark`. GitHub Pages is configured to use GitHub Actions. The repository's single merge-only workflow runs dependency installation, lint, typecheck, tests, and static build after a pull request is merged into `main`. Only a successful build is uploaded and deployed.
