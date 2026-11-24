@@ -2,33 +2,13 @@
   "name": "ai-benchmark",
   "version": "1.0.0",
   "private": true,
-  "description": "Compare language models side by side with streamed responses, manual scoring and public benchmark reference data.",
-  "keywords": [
-    "ai",
-    "llm",
-    "llm-benchmark",
-    "llm-evaluation",
-    "model-benchmarking",
-    "nextjs",
-    "typescript",
-    "streaming",
-    "tailwindcss",
-    "huggingface",
-    "github-pages",
-    "open-benchmarks"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Aaqibhafeezkhan/AI-Benchmark.git"
-  },
+  "description": "Compare open language models locally in the browser with WebLLM and WebGPU.",
+  "keywords": ["ai", "llm", "llm-benchmark", "model-evaluation", "webllm", "webgpu", "nextjs", "typescript", "github-pages"],
+  "repository": { "type": "git", "url": "https://github.com/Aaqibhafeezkhan/AI-Benchmark.git" },
   "homepage": "https://aaqibhafeezkhan.github.io/AI-Benchmark/",
-  "bugs": {
-    "url": "https://github.com/Aaqibhafeezkhan/AI-Benchmark/issues"
-  },
+  "bugs": { "url": "https://github.com/Aaqibhafeezkhan/AI-Benchmark/issues" },
   "license": "MIT",
-  "engines": {
-    "node": ">=18.17.0"
-  },
+  "engines": { "node": ">=18.17.0" },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -39,6 +19,7 @@
     "screenshots": "node scripts/capture-screenshots.mjs"
   },
   "dependencies": {
+    "@mlc-ai/web-llm": "^0.2.89",
     "next": "14.2.28",
     "react": "^18",
     "react-dom": "^18",
