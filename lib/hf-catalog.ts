@@ -20,7 +20,7 @@ function labelFromId(id: string): string {
 }
 
 export function parseHuggingFaceModelCatalog(payload: unknown, limit = 48): ModelConfig[] {
-  if (!isRecord(payload) || !Array.isArray(payload.data)) throw new Error("Unrecognized legacy catalogue format.")
+  if (!isRecord(payload) || !Array.isArray(payload.data)) throw new Error("Hugging Face returned an unrecognized model catalogue.")
   const entries = payload.data as unknown[]
   const models = entries.flatMap((item, index) => {
     if (!isRecord(item) || typeof item.id !== "string" || !item.id.trim()) return []
